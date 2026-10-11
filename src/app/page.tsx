@@ -1,0 +1,110 @@
+'use client';
+
+/**
+ * ExamHub Phase 1 — Interactive Prototype (single-page application).
+ * All screens live under this entry with a hash-based internal router
+ * because the preview environment exposes only "/".
+ */
+import * as React from 'react';
+import { useDemoStore } from '@/lib/prototype/store';
+import { Toaster } from '@/components/ui/sonner';
+
+// Standalone screens
+import { WelcomeScreen } from '@/components/prototype/screens/WelcomeScreen';
+import { LoginScreen } from '@/components/prototype/screens/LoginScreen';
+import { OnboardingScreen } from '@/components/prototype/screens/OnboardingScreen';
+import { PracticeHub, PracticeSessionScreen } from '@/components/prototype/screens/PracticeScreens';
+import { ExamRunner } from '@/components/prototype/screens/ExamRunner';
+
+// Shell + app screens
+import { AppShell } from '@/components/prototype/shell/AppShell';
+import { DashboardRouter } from '@/components/prototype/screens/Dashboards';
+import { ScreenRouter } from '@/components/prototype/screens/ScreenRouter';
+import { WalkthroughDrawer } from '@/components/prototype/screens/Walkthrough';
+
+export default function Home() {
+  const store = useDemoStore();
+  const route = store.route;
+  const session = store.session;
+  const path = route.path;
+
+  // debug/demo hook (also documented in README for support engineers)
+  React.useEffect(() => {
+    (window as unknown as { __examhub: unknown }).__examhub = useDemoStore;
+  }, []);
+
+  // global tick engine — advances transfers + exam timer
+  React.useEffect(() => {
+    const iv = setInterval(() => {
+      useDemoStore.getState().tick();
+    }, 900);
+    return () => clearInterval(iv);
+  }, []);
+
+  React.useEffect(() => {
+    if (!store.hydrated) store.syncFromHash();
+  }, [store.hydrated]);
+
+  // fullscreen exam route
+  if (path === '/exam') {
+    return (
+      <>
+        <ExamRunner />
+        <Toaster richColors position="bottom-right" />
+      </>
+    );
+  }
+
+  // standalone routes
+  let screen: React.ReactNode;
+  switch (true) {
+    case path === '/':
+      screen = <WelcomeScreen />;
+      break;
+    case path === '/login':
+      screen = <LoginScreen />;
+      break;
+    case path === '/onboarding':
+      screen = <OnboardingScreen />;
+      break;
+    case path === '/practice' || path.startsWith('/practice/'):
+      screen = <PracticeRouter />;
+      break;
+    case path.startsWith('/app'):
+      screen = (
+        <RequireSession>
+          <AppShell>
+            {path === '/app/dashboard' ? <DashboardRouter /> : <ScreenRouter />}
+          </AppShell>
+          <WalkthroughDrawer />
+        </RequireSession>
+      );
+      break;
+    default:
+      screen = <WelcomeScreen />;
+  }
+
+  return (
+    <>
+      {screen}
+      <Toaster richColors position="bottom-right" />
+    </>
+  );
+}
+
+function RequireSession({ children }: { children: React.ReactNode }) {
+  const store = useDemoStore();
+  const hasSession = !!store.session;
+  React.useEffect(() => {
+    if (!hasSession) store.navigate('/login');
+  }, [hasSession]);
+  if (!hasSession) return null;
+  return <>{children}</>;
+}
+
+function PracticeRouter() {
+  const store = useDemoStore();
+  const path = store.route.path;
+  if (path === '/practice/session') return <PracticeSessionScreen />;
+  return <PracticeHub />;
+}

@@ -1,0 +1,1647 @@
+# MASTER BUILD PROMPT — PHASE 1
+## Complete Interactive Prototype for an Offline-First, Decentralized School Examination Platform
+
+### 1. YOUR ROLE AND MISSION
+
+You are a senior Product Designer, UI/UX Architect, Frontend Prototyping Engineer, and Education Technology Product Specialist.
+
+Your assignment is to **design and build a comprehensive, fully interactive, clickable prototype** of a professional school examination and assessment platform.
+
+This is Phase 1 of a three-phase software development project.
+
+**Phase 1 — Your responsibility:** Design and implement every important screen, component, navigation structure, workflow, interaction, and simulated operation required to demonstrate the complete product.
+
+**Phase 2 — Another agent (Codex):** Will implement the complex desktop infrastructure, including Tauri, Rust, local database, peer-to-peer networking, encryption, licensing, desktop packaging, offline synchronization, security services, and desktop-to-browser connectivity.
+
+**Phase 3 — Another development agent:** Will implement the full application frontend, business backend, examination engine, question management, marking, analytics, AI integration, and other application features based on your prototype, while integrating with the desktop infrastructure developed by Codex.
+
+Therefore, your Phase 1 output must serve as the **master UX/UI blueprint and functional reference** for the complete application.
+
+Do not build a collection of static mockups. Build one coherent, navigable, interactive prototype with meaningful simulated application behavior.
+
+### 2. PRODUCT OVERVIEW
+
+Build a decentralized, offline-first school examination and assessment platform designed for primary schools, secondary schools, examination centres, and educational institutions.
+
+The product will be installable on Windows and macOS and will also support browser-based access through installed desktop nodes.
+
+The platform must be suitable for schools with unreliable or completely unavailable internet connectivity.
+
+Its core capabilities include:
+
+- School self-onboarding and configuration
+- Multi-school support with strict data isolation
+- Staff, student, class, subject, and user management
+- Advanced role-based access control
+- Question bank management
+- Assessment creation, approval, scheduling, and publishing
+- Controlled examinations and public practice assessments
+- AI-assisted question generation and management
+- Offline examination delivery
+- Automatic student answer saving and recovery
+- Assessment grading and results management
+- Student performance and learning analytics
+- Peer-to-peer computer discovery and communication
+- Selective and complete offline data synchronization
+- Conflict detection, resolution, and change history
+- Examination distribution to large numbers of computers
+- Examination result collection from multiple computers
+- Online and offline subscription licensing
+- Offline and online application updates
+- Backups, restoration, diagnostics, and audit trails
+
+The application should feel like a premium, well-designed commercial education technology product.
+
+### 3. CRITICAL ARCHITECTURAL CONCEPT — UNDERSTAND THIS FIRST
+
+**There is no permanent admin computer, teacher computer, student computer, or central school server.**
+
+Every installed desktop application is an independent peer.
+
+Each computer:
+
+1. Has its own local database.
+2. Can function independently.
+3. Can store its own and authorized replicated data.
+4. Can discover and communicate with other installed computers.
+5. Can initiate authorized synchronization.
+6. Can receive data from other computers.
+7. Can maintain pending transfers when another computer is unavailable.
+8. Can participate in the examination process regardless of which user previously used it.
+9. Can serve other computers while also requesting data from them.
+10. Can retain data even after the sending computer disconnects.
+
+**The currently authenticated user determines the application's available functions.**
+
+Examples:
+
+- An administrator logging into Computer A gets the administrator interface.
+- A teacher logging into Computer A gets the teacher interface.
+- A student logging into Computer A gets the student interface.
+- Computer A does not permanently become an administrator, teacher, or student computer.
+- Another computer can independently perform the same functions when an appropriately authorized user logs in.
+
+The prototype must make this distinction obvious.
+
+A school computer is a technical peer. A user is a person with permissions. An active session joins a user to a computer temporarily.
+
+Do not design a master-server/slave-client architecture.
+
+Any authorized peer may distribute approved examinations or collect results. A computer participating in an examination must not depend permanently on another computer to remain operational.
+
+For the prototype, simulate each computer's independent local data and synchronization states.
+
+### 4. PROTOTYPE SCOPE AND TECHNICAL APPROACH
+
+Build the prototype as a runnable web application with real navigation and interactive UI.
+
+Preferred technologies:
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- shadcn/ui or an equivalent accessible component library
+- Lucide icons
+- React Router
+- Zustand or another suitable lightweight state manager
+- LocalStorage or IndexedDB for simulated data persistence
+- Mock services and fixtures for backend-dependent features
+
+Use reusable components and a modular structure.
+
+Keep the frontend framework independent of Tauri-specific APIs so that the design can later be integrated into both the desktop application and the browser interface.
+
+For Phase 1:
+
+- No production database is required.
+- No real backend is required.
+- No actual peer-to-peer network communication is required.
+- No real encryption or licensing implementation is required.
+- No production authentication is required.
+- No live AI service is required.
+- No real desktop installer is required.
+
+However, every corresponding feature must be represented by realistic screens, controls, workflows, state changes, success messages, error messages, and mock operations.
+
+A button such as "Sync Assessment" must actually change the simulated peer state and produce an observable result. It must not merely display a decorative toast.
+
+Never present simulated security or synchronization as if it were production-secure.
+
+### 5. DESIGN AND USER EXPERIENCE REQUIREMENTS
+
+Create a modern, professional enterprise-grade application that is also simple enough for school administrators and teachers with limited technical experience.
+
+Design principles:
+
+1. Clean and uncluttered layouts.
+2. Clear visual hierarchy.
+3. Consistent navigation.
+4. Excellent readability.
+5. Responsive interface design.
+6. Accessibility-conscious components and keyboard navigation.
+7. Easy-to-understand terminology.
+8. Clear feedback after actions.
+9. Minimal steps for frequent tasks.
+10. Visible save, approval, distribution, and synchronization states.
+11. Contextual help and onboarding.
+12. Professional data tables and management interfaces.
+13. Useful empty states and error recovery.
+14. Consistent dialogs, forms, status indicators, and notifications.
+
+Use a sophisticated design system with neutral backgrounds, a restrained primary color, meaningful status colors, and attractive typography.
+
+Support light mode and dark mode.
+
+Prefer an application-style layout with a collapsible sidebar, header, breadcrumbs, search, notifications, and contextual actions.
+
+Students should receive a simpler, less administrative interface optimized for learning and taking examinations.
+
+Build for desktop screens first, but make the browser experience responsive for tablets and smaller screens.
+
+Include Windows-style and macOS-compatible interaction patterns where appropriate without developing separate interfaces.
+
+Use realistic sample data rather than excessive placeholder text.
+
+### 6. APPLICATION ENTRY, SCHOOL ONBOARDING, AND SETUP
+
+Design all necessary screens and interactive flows for:
+
+**Welcome and installation setup**
+
+- Welcome screen
+- Get started
+- Sign in to an existing school
+- Register a new school
+- Join an existing school
+- Import existing school data
+- Restore an existing installation from backup
+- Select application language
+- Device registration and naming
+- Local storage initialization status
+- Initial setup completion
+
+**School onboarding**
+
+- School information form
+- School name and logo
+- Address and contact details
+- School type
+- Academic calendar
+- Session and term configuration
+- Classes and arms
+- Departments
+- Subject configuration
+- Grading policies
+- Administrator account creation
+- Initial device registration
+- Subscription plan selection
+- Online/offline licence activation
+- Onboarding review and completion
+
+Show a guided setup wizard with progress indicators and validation.
+
+Users must also be able to leave incomplete setup where appropriate and resume later.
+
+Support joining an existing school through an authorized device pairing or school invitation workflow.
+
+Include the concept of multiple schools on a single authorized installation, with strict separation between their identities, users, and records.
+
+### 7. AUTHENTICATION, ACCOUNT MANAGEMENT, AND PERMISSIONS
+
+Design:
+
+- Login
+- Logout
+- Account switching
+- User profile
+- Change password
+- Password recovery options
+- Offline authentication state
+- Session locking
+- Session expiry
+- Reauthentication for sensitive operations
+- User invitation and registration
+- User activation/deactivation
+- Account suspension
+- Device/session history
+- Roles and permissions management
+- Permission groups
+- Custom roles
+- Permission assignment and revocation
+- User audit history
+
+Supported user types:
+
+- School proprietor or owner
+- School administrator
+- Examination officer
+- Head of department
+- Teacher
+- Invigilator
+- Student
+- Parent or guardian
+- Technical support administrator
+- Custom roles
+
+Build a comprehensive role-based access control configuration interface.
+
+Administrators must be able to create roles, assign granular permissions, and manage users.
+
+Demonstrate that two users logging into the same computer see different navigation, dashboards, and permitted features.
+
+A student must never see administrative controls simply because administrative data is stored on the computer.
+
+Include a clear access-denied state when a user attempts an unauthorized action.
+
+### 8. MAIN DASHBOARDS
+
+Build role-specific dashboards.
+
+**Administrator dashboard**
+
+Include cards, charts, summaries, and recent activity for:
+
+- Total students
+- Total staff
+- Active assessments
+- Pending assessment approvals
+- Upcoming examinations
+- Exams in progress
+- Completed examinations
+- School-wide performance
+- Connected and offline peers
+- Pending synchronization
+- Result collection status
+- Subscription status
+- System notifications
+- Recent administrative actions
+
+**Teacher dashboard**
+
+Include:
+
+- Assigned classes and subjects
+- Created questions
+- Question banks
+- Draft assessments
+- Pending assessments
+- Approved assessments
+- Student performance
+- Assessments awaiting marking
+- Upcoming tests
+- AI question generation shortcuts
+- Assessment synchronization actions
+
+**Student dashboard**
+
+Include:
+
+- Available examinations
+- Scheduled examinations
+- Practice assessments
+- Recently attempted questions
+- Scores and progress
+- Strong and weak subjects
+- Topic mastery indicators
+- Recommended practice
+- Performance charts
+- Personal learning history
+
+**Examination officer dashboard**
+
+Include:
+
+- Examination calendar
+- Pending examination approvals
+- Active examination sessions
+- Device readiness
+- Distribution progress
+- Invigilation summaries
+- Result collection progress
+- Incident reports
+
+**Invigilator dashboard**
+
+Include:
+
+- Assigned examination sessions
+- Candidate attendance
+- Active candidates
+- Device status
+- Submitted assessments
+- Incident logging
+- Permitted examination controls
+
+**Parent dashboard**
+
+Include:
+
+- Linked students
+- Released results
+- Academic progress
+- Learning recommendations
+- Assessment history
+- Relevant notifications
+
+Every dashboard must contain meaningful clickable navigation.
+
+### 9. SCHOOL MANAGEMENT
+
+Design complete management modules for:
+
+- School profile
+- Academic sessions
+- Terms
+- Classes
+- Class arms
+- Subjects
+- Departments
+- Academic levels
+- Class-teacher assignments
+- Subject-teacher assignments
+- Staff records
+- Student records
+- Enrollment
+- Student promotion
+- Student transfers
+- Bulk CSV/Excel import
+- Bulk export
+- User activation
+- Student registration codes
+- Parent/guardian associations
+- Academic calendars
+- School-specific assessment policies
+- School announcements and notifications
+
+Use searchable and filterable tables, forms, detail pages, import wizards, bulk actions, and confirmation dialogs.
+
+### 10. QUESTION BANK MANAGEMENT
+
+Build a comprehensive question bank module.
+
+**Question bank overview**
+
+- All question banks
+- School question banks
+- Personal draft questions
+- Subject question banks
+- Topic-based question banks
+- Shared question banks
+- Public practice content
+- Recently edited questions
+- Pending review
+- Approved questions
+- Archived questions
+
+**Question authoring**
+
+Support visually:
+
+- Single-choice multiple-choice questions
+- Multiple-response questions
+- True/false
+- Short answer
+- Numerical answer
+- Essay questions
+- Matching
+- Ordering
+- Fill-in-the-blank
+- Questions containing tables
+- Mathematical equations
+- Images and diagrams
+- Audio/media attachments
+
+**Question editor**
+
+Include:
+
+- Subject selection
+- Academic level
+- Topic and subtopic
+- Learning objective
+- Difficulty
+- Estimated answering time
+- Marks
+- Tags
+- Question statement
+- Answer options
+- Correct answer
+- Explanation
+- Worked solution
+- Optional hints
+- Rich text formatting
+- Mathematical equation editor
+- Attachment controls
+- Question preview
+- Save draft
+- Submit for review
+- Approve/reject where permitted
+- Duplicate
+- Edit
+- Archive
+- Version history
+
+**Question bank operations**
+
+- Search
+- Filter
+- Sort
+- Bulk selection
+- Bulk tag assignment
+- Bulk import
+- Export
+- Duplicate detection interface
+- Question usage history
+- Question statistics
+- Manual and AI-assisted question creation
+- Import from existing assessment
+- Question sharing
+- Version comparisons
+
+Demonstrate the process of importing selected questions into an assessment.
+
+### 11. AI-POWERED QUESTION GENERATION
+
+Design an AI assistant interface for teachers.
+
+Include:
+
+- Subject selection
+- Academic level selection
+- Topic selection
+- Subtopic selection
+- Difficulty
+- Question type
+- Number of questions
+- Curriculum alignment
+- Generate from typed instructions
+- Generate from lesson notes
+- Generate from uploaded PDF/document
+- Generate alternative versions of existing questions
+- Generate explanations
+- Generate answer options
+- Generate marking rubrics
+
+Simulate question generation using realistic predefined outputs.
+
+Allow teachers to:
+
+- Review generated questions
+- Edit generated questions
+- Regenerate individual questions
+- Accept or reject questions
+- Save to question bank
+- Add selected questions directly to a draft assessment
+
+Include AI availability states:
+
+- AI available online
+- Cloud AI unavailable
+- Local AI available
+- No AI model configured
+
+The prototype must not imply that cloud AI works without internet.
+
+### 12. ASSESSMENT MANAGEMENT
+
+Design the full assessment creation and management workflow.
+
+**Assessment types**
+
+Support:
+
+- Continuous assessment
+- Weekly test
+- Assignment
+- Mock examination
+- Entrance examination
+- End-of-term examination
+- Diagnostic assessment
+- Public practice test
+- Custom teacher-defined assessment type
+
+**Assessment creation wizard**
+
+Include:
+
+1. Assessment name
+2. Description and instructions
+3. Subject
+4. Class/level
+5. Assessment type
+6. Controlled or public
+7. Start date and time
+8. End date and time
+9. Duration
+10. Total marks
+11. Pass mark
+12. Attempt limits
+13. Question selection
+14. Question randomization
+15. Answer option randomization
+16. Section configuration
+17. Eligibility
+18. Result visibility policy
+19. Answer feedback policy
+20. Security controls
+21. Publication/approval settings
+22. Review and submission
+
+**Question selection methods**
+
+- Create questions manually
+- Import from question bank
+- Randomly select from question bank
+- Select by subject/topic
+- Select by difficulty
+- AI-assisted question generation
+- Duplicate previous assessment
+- Import from supported file formats
+
+**Assessment lifecycle**
+
+Design visually distinct statuses:
+
+- Draft
+- Pending approval
+- Revision requested
+- Rejected
+- Approved
+- Scheduled
+- Ready for distribution
+- Distribution in progress
+- Distributed
+- Active
+- Completed
+- Marking in progress
+- Awaiting result approval
+- Results released
+- Archived
+
+**Important rule:**
+
+A teacher-created assessment must remain unavailable for official controlled examination delivery until an authorized administrator approves the specific assessment version.
+
+If an approved examination is edited, those edits must create a new draft/revision and must not silently alter the previously approved published version.
+
+Build the appropriate approval, rejection, revision request, resubmission, and history interfaces.
+
+### 13. CONTROLLED EXAMINATION EXPERIENCE
+
+Design the complete student examination flow:
+
+- Available exams
+- Upcoming exams
+- Exam eligibility check
+- Exam access code or invitation
+- Pre-exam instructions
+- Identity confirmation
+- System readiness check
+- Start examination
+- Question display
+- Question navigation
+- Previous/next buttons
+- Question palette
+- Flag question for review
+- Timer
+- Section navigation
+- Answer selection/editing
+- Automatic saving indicator
+- Offline status indicator
+- Remaining questions count
+- Review unanswered questions
+- Submit examination
+- Submission confirmation
+- Results pending state
+- Released results
+- Examination review where permitted
+
+Support appropriate interfaces for all question types.
+
+Include realistic simulated conditions:
+
+- Connection lost during examination
+- Answer saved locally
+- Computer temporarily disconnected
+- App interruption
+- Examination resumed
+- Time expired
+- Submission pending sync
+- Submission successfully synchronized
+
+An exam should remain usable offline when its approved package is already stored locally and its permitted unlock/start conditions are satisfied.
+
+Do not assume all exams can start without trusted time or authorization. Represent any required pre-issued offline authorization in the UI.
+
+### 14. PUBLIC PRACTICE AND ANONYMOUS ACCESS
+
+Build a separate public practice experience.
+
+A visitor may:
+
+- Browse available public practice content
+- Choose subject
+- Choose academic level
+- Select topics
+- Choose difficulty
+- Select number of questions
+- Start a timed or untimed practice session
+- Answer questions without logging in
+- Receive immediate feedback where enabled
+- Review solutions and explanations
+- View practice results
+- See topic strengths and weaknesses
+- Retake a session
+- Create an account
+- Link eligible guest progress to an account after identity verification
+
+Anonymous practice records should use temporary guest identities and a clearly explained data retention policy.
+
+Do not automatically merge anonymous attempts with official student academic records.
+
+Make the practice experience engaging, clean, and suitable for younger students.
+
+### 15. STUDENT RESULTS AND ACADEMIC ANALYTICS
+
+Design:
+
+- Examination results
+- Practice results
+- Assessment history
+- Score breakdown
+- Correct/incorrect answers
+- Unanswered questions
+- Subject performance
+- Topic performance
+- Subtopic performance
+- Difficulty performance
+- Time per question
+- Accuracy trends
+- Progress over time
+- Strong and weak topics
+- Personalized recommendations
+- Recommended revision questions
+- Learning milestones
+- Historical comparison
+- Class performance comparison where permitted
+- Printable progress reports
+- Download/export controls
+
+For teachers and administrators, include:
+
+- Class performance
+- Subject performance
+- Assessment statistics
+- Question performance
+- Difficulty analysis
+- Student performance distribution
+- Underperforming students
+- Intervention recommendations
+- Performance trend charts
+- Exportable result sheets
+- Individual student reports
+
+Use realistic tables, charts, indicators, and filters.
+
+### 16. PEER-TO-PEER COMPUTER MANAGEMENT — CRITICAL MODULE
+
+This is one of the most important parts of the prototype.
+
+Design a comprehensive **Computers & Sync** section.
+
+This section must not be called "Server Management" or imply that one computer is permanently the master.
+
+Every desktop installation is an autonomous peer.
+
+**Peer dashboard**
+
+Show:
+
+- Current computer name
+- Current computer ID
+- Current IP address
+- Peer listening port
+- School association
+- Connection status
+- Local storage health
+- Last synchronization
+- Total paired devices
+- Currently reachable devices
+- Unreachable devices
+- Pending synchronization tasks
+- Failed transfers
+- Sync history
+
+**Peer discovery**
+
+Create screens for:
+
+- Scanning the LAN
+- Listing discovered computers
+- Device identity verification
+- Pairing approval
+- Reconnecting known peers
+- Manual IP address entry
+- Network connection testing
+- Device details
+- Device trust status
+- Unpairing and revocation
+- Connection errors
+- Firewall/network troubleshooting
+
+**Peer list**
+
+Show 100 simulated computers with:
+
+- Device name
+- Device ID
+- IP address
+- Online/offline status
+- Paired/unpaired status
+- Last seen
+- App version
+- Data sync status
+- Last successful transfer
+- Pending changes
+- Transfer actions
+
+Do not classify computers permanently as "student computers" or "admin computers."
+
+You may optionally display the current user/session where authorized, but that is temporary session information, not the computer's permanent type.
+
+**Data synchronization centre**
+
+Provide controls to:
+
+- Sync everything permitted
+- Sync selected assessments
+- Sync question banks
+- Sync approved examination packages
+- Sync student records where authorized
+- Sync staff records where authorized
+- Sync results
+- Sync permissions and identity records
+- Sync school settings
+- Select receiving computers
+- Sync with one computer
+- Sync with several selected computers
+- Sync with all paired reachable computers
+- Retry failed transfers
+- View transfer details
+- Review conflicts
+- View synchronization history
+
+Every synchronization operation must respect the current user's permissions and the receiving device's authorization.
+
+Include progress bars, transfer speeds as mock values, status badges, successful transfers, failures, and retries.
+
+### 17. THE MOST IMPORTANT END-TO-END WORKFLOW
+
+Implement this complete interactive scenario:
+
+**Scenario: Teacher creates an exam, administrator approves it, distributes it to 100 computers, and later collects results.**
+
+Step 1: A teacher logs into Computer 17.
+
+Step 2: The teacher creates a Mathematics examination.
+
+Step 3: The examination is saved locally on Computer 17.
+
+Step 4: The teacher submits it for administrative approval.
+
+Step 5: The teacher selects Computer 43 as the destination for the approval request, or sends the request to available authorized reviewers.
+
+Step 6: An administrator logs into Computer 43.
+
+Step 7: The administrator sees the pending assessment.
+
+Step 8: The administrator reviews the assessment and approves it.
+
+Step 9: The application records an approval associated with the correct version.
+
+Step 10: The administrator opens the peer distribution interface.
+
+Step 11: The administrator selects all 100 discovered school computers.
+
+Step 12: The system starts simulated distribution.
+
+Step 13: Each computer receives a separate local copy of the approved assessment.
+
+Step 14: Show per-computer progress and acknowledgments.
+
+Step 15: Simulate 96 successful transfers, three pending transfers, and one offline computer.
+
+Step 16: Allow retry and reconnection.
+
+Step 17: Students log into different computers and take the examination.
+
+Step 18: Every student's answers are saved to their current computer's simulated local database.
+
+Step 19: A computer disconnects during the examination.
+
+Step 20: The student continues because the examination package has already been stored locally.
+
+Step 21: Students complete their assessments.
+
+Step 22: An administrator logs into Computer 8, which was not the original creating or approving computer.
+
+Step 23: The administrator opens the result collection interface.
+
+Step 24: The system discovers available peers and collects verified student submission records.
+
+Step 25: Show 97 collected submissions out of 100 expected candidates.
+
+Step 26: Show three outstanding results.
+
+Step 27: Reconnect the outstanding peers or locate authorized replicas of their results.
+
+Step 28: Complete collection of all 100 submissions.
+
+Step 29: Display a consolidated result dashboard.
+
+Step 30: Allow the administrator to export results and proceed with marking/moderation and publication.
+
+**This scenario must be navigable and interactive from beginning to end.**
+
+The prototype must show different local states on different simulated computers.
+
+Switching from Computer 17 to Computer 43 must not automatically expose data that has not yet been synchronized or replicated.
+
+### 18. SIMULATED INDEPENDENT-COMPUTER ENVIRONMENT
+
+Create a special demonstration capability called **Device Simulator**.
+
+Its purpose is to demonstrate how one physical computer or browser can simulate many independent application installations.
+
+Include a clearly labeled simulation toolbar or developer/demo panel.
+
+Features:
+
+- Switch active simulated computer
+- Change logged-in demo user
+- Simulate online/offline LAN connectivity
+- Simulate a peer becoming unreachable
+- Simulate reconnection
+- Simulate delayed synchronization
+- Simulate failed transfer
+- Simulate successful transfer
+- Inspect local records belonging to the current simulated computer
+- Compare data across selected computers
+- Reset the demonstration
+- Load predefined demonstration scenarios
+
+Seed approximately 100 simulated device identities.
+
+For performance, fully populate a smaller set of representative computers, while generating the remaining device records for the large-network demonstration.
+
+Each simulated computer must have distinct local state.
+
+Do not use one global synchronized data collection that makes every new record instantly available on all computers.
+
+Changes must propagate only when the simulated synchronization operation allows them.
+
+This simulator is for the prototype demonstration only and must be separable from production application components.
+
+### 19. SYNCHRONIZATION CONFLICT MANAGEMENT
+
+Design a proper conflict management module.
+
+Include:
+
+- Conflict dashboard
+- Conflict type
+- Affected record
+- Originating computers
+- Users involved
+- Record revisions
+- Side-by-side comparison
+- Conflict creation date
+- Suggested resolution
+- Choose version A
+- Choose version B
+- Manual merge where supported
+- Preserve both versions
+- Defer resolution
+- Resolution history
+- Audit trail
+
+Demonstrate these cases:
+
+1. Two teachers edit the same question on different computers.
+2. Two computers have different revisions of the same draft assessment.
+3. A published assessment is modified after approval.
+4. A result submission is received twice.
+5. An unauthorized computer attempts to send restricted records.
+6. A record is deleted on one device while another device still has its previous version.
+
+A duplicate examination submission should be recognized as the same submission rather than counted twice.
+
+Published assessment versions and finalized attempt records should not be silently overwritten.
+
+Show clear before-and-after results when a conflict is resolved.
+
+### 20. REAL-TIME COMMUNICATION AND NOTIFICATIONS
+
+Design appropriate real-time features, including:
+
+- Peer connection notifications
+- Disconnection notifications
+- Synchronization progress
+- Assessment received
+- Assessment approval requested
+- Assessment approved
+- Assessment rejected
+- Examination distributed
+- Examination started
+- Examination completed
+- Result submission received
+- Result collection completed
+- Conflict detected
+- Permission change notification
+- Licence expiry warning
+- Update availability notification
+
+Include a notifications centre with filters, unread/read states, action links, and notification history.
+
+Simulate real-time events through application state changes.
+
+Do not build a full general-purpose chat application unless necessary for these workflows.
+
+### 21. EXAMINATION MONITORING AND INVIGILATION
+
+Build:
+
+- Examination session dashboard
+- Examination roster
+- Candidate attendance
+- Candidate eligibility
+- Device readiness
+- Exam package availability
+- Active examination progress
+- Submitted vs outstanding candidates
+- Connection status
+- Incident logs
+- Examination interruption reports
+- Student resumption approvals
+- Examination completion status
+- Collection readiness
+
+Show a realistic examination session with 100 expected students.
+
+Administrators and invigilators should see only the information their permissions allow.
+
+### 22. RESULTS PROCESSING AND MARKING
+
+Design:
+
+- Submitted assessments list
+- Result collection dashboard
+- Automatic marking review
+- Manual essay marking
+- Rubric-based grading
+- Partial marks
+- Marking assignments
+- Marking progress
+- Moderation
+- Grade adjustments
+- Result approval
+- Result release
+- Student results
+- Class results
+- Subject analysis
+- Missing result warnings
+- Duplicate submission warnings
+- Export to Excel/PDF interfaces
+- Printable score sheets
+- Result correction history
+- Audit logs
+
+Support mixed assessments containing both automatically marked and manually marked questions.
+
+Do not treat all results as ready for publication immediately after submission.
+
+### 23. LICENSING AND SUBSCRIPTION MANAGEMENT
+
+Design the complete licence-management experience.
+
+Screens must include:
+
+- Subscription plans
+- Subscription comparison
+- Licence activation
+- Online activation
+- Offline activation
+- Product key entry
+- Activation request generation
+- Import activation file
+- Licence verification progress
+- Licence information
+- School subscription status
+- Registered devices
+- Device limits
+- Add/remove device
+- Device replacement
+- Renewal
+- Grace period
+- Expired licence
+- Invalid licence
+- Revoked licence
+- Licence history
+- Subscription billing history
+- Feature entitlements
+
+**Offline activation workflow**
+
+1. School installs the application.
+2. The app displays a device identifier.
+3. The school generates an activation request.
+4. The school transfers that request to an internet-connected computer.
+5. An authorized licensing service produces an activation file.
+6. The file is imported into the offline installation.
+7. The installation displays successful activation.
+
+Simulate all these steps.
+
+The prototype must explain that offline licences have defined validity periods and may require future renewal.
+
+An expired subscription must not unexpectedly destroy school records. Design a sensible read-only, export, or limited-access experience.
+
+### 24. APPLICATION UPDATES
+
+Design a complete updates interface covering:
+
+- Current installed version
+- Available update
+- Release notes
+- Automatic update preferences
+- Download update
+- Install update
+- Import offline update package
+- Distribute update to selected peers
+- LAN update availability
+- Per-device update status
+- Update compatibility check
+- Package verification state
+- Backup before update
+- Update progress
+- Update completed
+- Update failed
+- Recovery guidance
+- Update history
+
+Simulate the following workflow:
+
+An authorized user obtains an update package on an internet-connected computer, imports it into an offline school computer, and optionally distributes the verified package across the LAN.
+
+Show warnings when examinations are active or an update would be unsafe.
+
+### 25. BACKUP, RESTORE, AND DATA PROTECTION
+
+Design:
+
+- Backup dashboard
+- Local backup creation
+- Scheduled backup settings
+- Backup history
+- Backup verification
+- Restore wizard
+- Import backup
+- Export backup
+- Selective data export
+- Backup storage location
+- Data retention settings
+- Storage usage
+- Local database health
+- Recovery status
+- Backup encryption indicator
+- Data integrity warnings
+
+Clearly distinguish synchronization from backup.
+
+Show how a school could recover data after losing one device, assuming a valid backup or authorized replica exists.
+
+### 26. SETTINGS AND TECHNICAL ADMINISTRATION
+
+Create settings screens for:
+
+- General preferences
+- School profile
+- Academic settings
+- Assessment defaults
+- User permissions
+- Device identity
+- Local network configuration
+- Peer discovery
+- Manual IP connections
+- Synchronization preferences
+- Transfer history
+- Encryption and data security status
+- Authentication and session policies
+- Licence settings
+- Update settings
+- Storage settings
+- Backup and restore
+- AI provider settings
+- Accessibility
+- Themes
+- Language
+- Notifications
+- Application logs
+- Diagnostics
+- Application information
+- Help and support
+
+Provide sensible explanatory text for technical settings so nontechnical school administrators can understand them.
+
+### 27. BROWSER ACCESS
+
+Include the browser-access experience as part of the design.
+
+Provide:
+
+- Browser access settings
+- Local web access address
+- LAN availability status
+- Access QR code mockup
+- Browser session login
+- Browser-specific device information
+- Browser access permissions
+- Connected browser sessions
+- Revoke browser session
+- Browser connection failure
+- Unsupported feature notices
+
+The browser interface should use the same general product design and role-based navigation.
+
+However, browser sessions are not equivalent to installed desktop peers.
+
+A browser session connects through a reachable installed peer and may use limited browser storage. It must not be represented as running the same unrestricted native background networking service as a Tauri installation.
+
+Design the appropriate feature-availability indicators where necessary.
+
+### 28. AUDIT LOGS, REPORTS, AND SYSTEM HEALTH
+
+Design administrative interfaces showing:
+
+- User login events
+- Permission changes
+- Device pairing events
+- Device revocations
+- Assessment approvals
+- Assessment revisions
+- Question changes
+- Exam publication
+- Result adjustments
+- Result collection activities
+- Synchronization events
+- Conflict resolutions
+- Licensing events
+- Application update events
+- Backup and restore events
+- Unauthorized access attempts
+- System diagnostic logs
+
+Allow filtering by user, device, action, date range, and status.
+
+Provide an audit-event detail view.
+
+### 29. FULL NAVIGATION AND SCREEN COVERAGE
+
+Organize the application into coherent navigation groups such as:
+
+- Dashboard
+- Schools / Academic Setup
+- Users & Permissions
+- Students
+- Staff
+- Classes & Subjects
+- Question Banks
+- AI Question Assistant
+- Assessments
+- Approvals
+- Examination Sessions
+- Public Practice
+- Results & Marking
+- Analytics & Reports
+- Computers & Sync
+- Conflicts
+- Notifications
+- Licensing
+- Updates
+- Backups
+- Audit Logs
+- Settings
+- Help & Support
+
+Navigation must be context-aware.
+
+Not every role should see every navigation item.
+
+Each module should include appropriate list, detail, create, edit, review, and status screens instead of collapsing complex functionality into one generic page.
+
+Use breadcrumbs, tabs, drawers, modals, and dedicated pages appropriately.
+
+### 30. INTERACTIVITY REQUIREMENTS
+
+**Do not leave visible primary actions as dead buttons.**
+
+Implement meaningful simulated behavior for:
+
+- Creating records
+- Editing records
+- Deleting/archiving records
+- Form validation
+- Searching
+- Sorting
+- Filtering
+- Pagination
+- Bulk actions
+- Tab switching
+- Modal dialogs
+- Save draft
+- Submit for approval
+- Approve/reject
+- Publishing
+- Assessment distribution
+- Peer discovery
+- Peer selection
+- Manual IP connection attempts
+- Simulated synchronization
+- Retry transfers
+- Resolving conflicts
+- Starting examinations
+- Answering questions
+- Saving answers
+- Submitting examinations
+- Marking answers
+- Publishing results
+- Generating mock reports
+- Activating licences
+- Importing mock update packages
+- Creating backups
+- Viewing notifications
+- Switching users
+- Switching simulated computers
+
+Actions must update visible application state.
+
+Persist demo data between page refreshes where practical.
+
+Provide a Reset Demo option so the original scenarios can be replayed.
+
+If a particular functionality is intentionally outside the prototype scope, clearly label it as a simulated or future integration rather than implementing misleading behavior.
+
+### 31. REQUIRED DEMONSTRATION DATA
+
+Prepare comprehensive realistic seed data.
+
+Include at least:
+
+- 2 sample schools
+- 1 fully configured primary/secondary school
+- 100 simulated computer identities
+- Multiple administrators
+- Multiple teachers
+- Examination officers and invigilators
+- Students across different classes
+- Example parents/guardians
+- Multiple subjects
+- Topics and subtopics
+- Meaningful question banks
+- Several assessment types
+- Draft and pending assessments
+- Approved and active assessments
+- Completed examination attempts
+- Student results
+- Performance charts
+- Peer synchronization history
+- Pending transfers
+- Conflicting records
+- Offline devices
+- Licence states
+- Application update states
+- Audit history
+
+Create a convenient demonstration login selector.
+
+Include sample accounts for administrator, teacher, examination officer, student, invigilator, and parent.
+
+Allow easy switching between the accounts without requiring real credentials.
+
+Make it obvious which parts of the application are being simulated.
+
+### 32. UX STATES AND ERROR HANDLING
+
+For every major module, include appropriate:
+
+- Loading states
+- Empty states
+- Success states
+- Error states
+- Permission-denied states
+- Offline states
+- Retry states
+- Unsaved changes warnings
+- Confirmation dialogs
+- Interrupted transfer states
+- Connection timeout states
+- Duplicate record warnings
+- Conflicting revision warnings
+- Expired licence states
+- Unsupported browser feature warnings
+- Recovery guidance
+
+A school administrator with limited technical skills should be able to understand what happened and what action to take next.
+
+### 33. PHASE 2 AND PHASE 3 INTEGRATION READINESS
+
+Your prototype must be structured so another agent can use it as the implementation reference.
+
+Keep a strict distinction between:
+
+**Presentation layer**
+
+- Screens
+- Components
+- Navigation
+- Forms
+- Tables
+- Visualizations
+- User interactions
+- Local UI state
+
+**Mock application services**
+
+- Sample authentication
+- Mock user management
+- Simulated question management
+- Simulated assessment management
+- Simulated examination engine
+- Mock analytics
+- Simulated synchronization
+- Simulated licence operations
+- Simulated desktop operations
+
+Design typed interfaces or service abstractions where practical.
+
+For example, the interface may depend on conceptual services such as:
+
+- AuthService
+- SchoolService
+- UserService
+- QuestionBankService
+- AssessmentService
+- ExamAttemptService
+- ResultsService
+- AnalyticsService
+- PeerDiscoveryService
+- DevicePairingService
+- SyncService
+- ConflictService
+- LicensingService
+- UpdateService
+- BackupService
+- NotificationService
+- AuditService
+
+These are proposed service boundaries, not fixed production API contracts. The Phase 2 and Phase 3 agents will refine and agree on the final contracts.
+
+Ensure that a future agent can replace mock implementations without unnecessarily rewriting the entire UI.
+
+Do not tightly couple React components to prototype simulation logic.
+
+### 34. REQUIRED DOCUMENTATION AND HANDOFF FILES
+
+Create documentation alongside the prototype.
+
+**A. PRODUCT_OVERVIEW.md**
+
+Describe the product purpose, users, capabilities, and essential architectural principles.
+
+**B. SCREEN_INVENTORY.md**
+
+List every implemented screen with:
+
+- Screen name
+- Route/location
+- Intended users
+- Main features
+- Key interactions
+- Relevant screenshots or references where available
+
+**C. USER_FLOWS.md**
+
+Describe important workflows step by step.
+
+Prioritize:
+
+- School onboarding
+- Login and role switching
+- Teacher assessment creation
+- Admin approval
+- P2P device discovery
+- Assessment distribution
+- Student examination
+- Result collection
+- Conflict resolution
+- Offline licence activation
+- Offline application updates
+
+**D. DESIGN_SYSTEM.md**
+
+Document design tokens, colors, typography, spacing, components, layout patterns, responsive behavior, accessibility considerations, and interaction rules.
+
+**E. DATA_MODELS.md**
+
+Provide proposed conceptual entities and relationships for:
+
+- Schools
+- Devices
+- Users
+- Roles
+- Permissions
+- Classes
+- Subjects
+- Topics
+- Questions
+- Question revisions
+- Assessments
+- Assessment versions
+- Approval events
+- Exam sessions
+- Exam attempts
+- Answers
+- Submission events
+- Results
+- Sync events
+- Sync checkpoints
+- Conflicts
+- Licences
+- Updates
+- Backups
+- Audit events
+
+These are conceptual models for handoff, not final production database schemas.
+
+**F. INTEGRATION_CONTRACTS.md**
+
+Describe proposed service interfaces and operations for each module.
+
+Clearly identify operations requiring:
+
+- Local database access
+- Native desktop privileges
+- Peer networking
+- Real-time messaging
+- Permission verification
+- Encryption
+- Cloud service access
+- Application business logic
+
+Distinguish Phase 2 engine-owned responsibilities from Phase 3 business-service responsibilities.
+
+**G. STATE_MACHINES.md**
+
+Document important states and transitions for:
+
+- Assessments
+- Approvals
+- Exams
+- Exam attempts
+- Result submissions
+- Sync jobs
+- Conflicts
+- Devices
+- Licences
+- Update installations
+
+**H. CODEX_PHASE2_HANDOFF.md**
+
+Prepare a specific handoff for Codex, including:
+
+- Required desktop engine capabilities
+- Proposed native API contracts
+- Required peer-to-peer behavior
+- Local storage requirements
+- Authentication and authorization boundaries
+- Encryption responsibilities
+- Licensing responsibilities
+- Browser-serving requirements
+- Installer/update requirements
+- Simulated prototype functionality that Codex must replace
+- Technical assumptions needing validation
+
+Do not ask Codex to build the application's full business frontend or examination management backend.
+
+**I. PHASE3_HANDOFF.md**
+
+Explain which screens, mock services, business modules, workflows, and data models must be converted into production functionality by the application development agent.
+
+**J. README.md**
+
+Provide startup instructions, project organization, demo login instructions, device simulator instructions, major routes, and test scenarios.
+
+### 35. QUALITY ASSURANCE AND ACCEPTANCE CRITERIA
+
+Before considering the prototype complete, verify:
+
+1. Every major application module is accessible.
+2. Major navigation paths work.
+3. Role switching changes visible permissions and navigation.
+4. Device switching changes the simulated computer context.
+5. Independently stored mock data is not automatically shared without synchronization.
+6. A teacher can create and submit an assessment.
+7. An administrator on a different computer can receive and approve the assessment.
+8. Approval applies to a specific assessment revision.
+9. An approved assessment can be distributed to simulated peers.
+10. Distribution statuses change realistically.
+11. Students can take an assessment.
+12. Answers are saved locally in the simulation.
+13. A disconnected computer can retain its own attempt state.
+14. An administrator can collect results from independent peers.
+15. Duplicate submissions are not counted twice.
+16. Missing results remain visibly outstanding until available.
+17. Simulated conflicts can be inspected and resolved.
+18. Restricted users cannot access administrative screens.
+19. Offline activation flows are demonstrable.
+20. Offline update import flows are demonstrable.
+21. Data tables, filters, forms, and dialogs work.
+22. Important error states are represented.
+23. The application is responsive at reasonable desktop and tablet sizes.
+24. Screens have consistent styling and terminology.
+25. The complete major user journeys can be demonstrated without manually editing code.
+26. There are no broken primary navigation links or placeholder primary action buttons.
+27. The prototype is clearly identified as a simulation, not a production examination/security system.
+28. Documentation is sufficient for separate engineering agents to implement subsequent phases.
+
+### 36. EXECUTION STRATEGY
+
+Follow this implementation order:
+
+**Stage 1 — Design system and application shell**
+
+Create the visual language, navigation, reusable components, page layouts, and application structure.
+
+**Stage 2 — Full screen coverage**
+
+Implement the complete screen inventory and role-specific navigation.
+
+**Stage 3 — Functional prototype behavior**
+
+Connect forms, tables, mock data, dashboards, dialogs, approval states, examination flows, and analytics.
+
+**Stage 4 — Device and synchronization simulator**
+
+Implement independent peer states, discovery, simulated distribution, result collection, and conflict management.
+
+**Stage 5 — Complete demonstration workflows**
+
+Connect the most important end-to-end scenarios into coherent user journeys.
+
+**Stage 6 — Testing and handoff documentation**
+
+Review functionality, polish interactions, validate major workflows, and generate the required documentation.
+
+Do not stop at a sitemap, wireframe, component library, or development plan.
+
+Your assignment is to deliver the working interactive prototype.
+
+Use sensible product-design assumptions where details are not explicitly defined, record significant assumptions in the documentation, and proceed without repeatedly requesting clarification.
+
+Do not significantly reduce the requested screen coverage merely to complete the prototype quickly. Prefer implementing a coherent, reusable structure that supports all specified modules, then improving the depth and realism of the key workflows.
+
+### 37. FINAL DELIVERABLES
+
+Deliver:
+
+1. A complete, runnable interactive application prototype.
+2. A live preview or runnable preview environment, if supported.
+3. All important product screens.
+4. Fully connected primary user journeys.
+5. Role-based demonstration accounts.
+6. Interactive peer-to-peer synchronization simulator.
+7. Assessment approval and distribution demonstration.
+8. Student examination and result collection demonstration.
+9. Licensing, updates, backup, and conflict-resolution demonstrations.
+10. Reusable frontend components.
+11. Mock service interfaces.
+12. Project source code.
+13. Complete UX, architecture-handoff, and integration documentation.
+14. A testable demonstration scenario using 100 simulated computers.
+
+### 38. FINAL INSTRUCTION
+
+This platform's most distinctive feature is its autonomous, peer-to-peer, offline-first architecture.
+
+Do not compromise that concept by designing the interface around a permanently designated admin computer, dedicated teacher computer, student computer, or mandatory central school server.
+
+Any installed desktop computer can become an administrative, teaching, or student workstation depending on the authenticated user's permissions.
+
+Each computer maintains independent local storage and participates in authorized data exchange.
+
+Build the prototype to reflect this architecture consistently across all modules.
+
+**The final prototype must be comprehensive enough that a separate engineer can understand the intended entire application by navigating it, and separate development agents can use its code, workflows, and documentation as the foundation for the production system.**
+
+Begin implementation now.
