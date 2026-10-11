@@ -38,3 +38,21 @@ Work Log:
 Stage Summary:
 - Both reported console errors fixed; codebase scanned clean for nested-button patterns; teacher dashboard flow E2E-verified with 0 console errors.
 - Files changed: src/app/layout.tsx, src/components/prototype/screens/Dashboards.tsx; added scripts/scan_nested_buttons.py.
+
+---
+Task ID: 3
+Agent: Super Z (main agent)
+Task: Fix sidebar hidden behind main page (mobile nav drawer trapped inside header)
+
+Work Log:
+- Reproduced: at <1024px viewport, the nav drawer ("Open navigation") rendered as a 800x55px strip instead of a full-height sidebar — all nav links hidden behind the main page content.
+- Root cause: the <header> uses backdrop-blur; per CSS spec backdrop-filter makes an element the containing block for fixed descendants AND a stacking context. MobileNav's hand-rolled `fixed inset-0 z-40` drawer lives inside the header, so it was sized to the header box and trapped under the header's z-20 context (page + z-30 simulator bar painted above it).
+- Fix 1 (AppShell.tsx MobileNav): drawer overlay now rendered via createPortal(..., document.body) — escapes both the containing block and the stacking context.
+- Fix 2 (same trap): ChangePasswordDialog (`fixed inset-0 z-50`, also rendered inside the header via UserMenu) portaled to document.body too.
+- Fix 3: desktop sidebar footer ("Peer computer" block) was covered by the fixed full-width SimulatorBar; added pb-16 clearance so the text clears the bar (verified: text bottom 736 < bar top 748 at 1440x800).
+- Audited all other `fixed inset-0` overlays (Walkthrough → page level, QuestionScreens/ExamRunner → main column, no backdrop-filter ancestors) — safe.
+- E2E verified at 800px: portal overlay is child of body covering full viewport (800x900), drawer 256x900; close → overlay removed; open → click "Question Banks" navigates to #/app/questions and auto-closes; Change password dialog full-screen; 0 page errors; tsc clean for AppShell.
+- Screenshots: download/screenshots/mobile-nav-bug.png (before), mobile-nav-fixed.png, password-dialog-fixed.png, sidebar-footer-fixed.png (after).
+
+Stage Summary:
+- Sidebar/nav drawer now renders above the main page at all viewport widths; change-password dialog fixed by the same portal change; sidebar footer no longer clipped by the simulator bar. Single file changed: src/components/prototype/shell/AppShell.tsx.

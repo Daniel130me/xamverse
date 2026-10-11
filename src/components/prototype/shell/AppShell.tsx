@@ -5,6 +5,7 @@
  * Role-aware navigation. Contextual, collapsible, responsive.
  */
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { useDemoStore } from '@/lib/prototype/store';
 import { NAV_GROUPS } from './nav-config';
 import { ROLE_LABELS, fmtRelative } from '@/lib/prototype/ui-utils';
@@ -100,7 +101,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         {!sidebarCollapsed && (
-          <div className="border-t p-3 text-[10px] leading-relaxed text-muted-foreground">
+          <div className="border-t p-3 pb-16 text-[10px] leading-relaxed text-muted-foreground">
             <p className="font-medium text-foreground/70">Peer computer</p>
             <p>ID {device?.id} · {device?.ip}:{device?.port}</p>
             <p className="mt-1">Every installation is an independent peer. Nothing here is production-secure.</p>
@@ -211,9 +212,12 @@ function UserMenu() {
 
 function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [done, setDone] = React.useState(false);
+  // Rendered via portal: the <header> has backdrop-blur, which makes it the containing block
+  // for fixed descendants and traps them in its 56px-tall stacking context.
+  if (typeof document === 'undefined') return null;
   return (
     <>
-      {open && (
+      {open && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => onOpenChange(false)}>
           <div className="w-full max-w-sm rounded-xl border bg-card p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-sm font-semibold">Change password</h2>
@@ -229,7 +233,8 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               <Button size="sm" onClick={() => { setDone(true); setTimeout(() => { onOpenChange(false); setDone(false); }, 900); }}>Update</Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
@@ -245,7 +250,9 @@ function MobileNav() {
       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpen(true)} aria-label="Open navigation">
         <PanelLeftOpen className="h-4 w-4" />
       </Button>
-      {open && (
+      {open && createPortal(
+        // Portal to <body>: the header's backdrop-blur would otherwise trap this
+        // fixed overlay inside the header's 56px box and stacking context.
         <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setOpen(false)}>
           <div className="h-full w-64 overflow-y-auto border-r bg-background p-3" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
@@ -269,7 +276,8 @@ function MobileNav() {
               <Button variant="outline" className="mt-2 w-full" size="sm" onClick={() => { store.logout(); setOpen(false); }}><LogOut className="mr-2 h-4 w-4" /> Sign out</Button>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
