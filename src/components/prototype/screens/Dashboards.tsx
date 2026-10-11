@@ -228,7 +228,14 @@ export function TeacherDashboard() {
           ) : (
             <div className="space-y-2">
               {myAssessments.slice(0, 5).map((a) => (
-                <button key={a.id} onClick={() => navigate(`/app/assessments/${a.id}`)} className="flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left hover:bg-accent">
+                <div
+                  key={a.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/app/assessments/${a.id}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/app/assessments/${a.id}`); } }}
+                  className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border p-3 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{a.name}</p>
                     <p className="text-xs text-muted-foreground">v{a.version} · {a.questionIds.length} questions · {a.totalMarks} marks · {fmtDate(a.startAt)}</p>
@@ -237,7 +244,7 @@ export function TeacherDashboard() {
                     {a.status === 'draft' && <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); navigate('/app/sync'); }}>Submit for approval</Button>}
                     <StatusBadge status={a.status} label={ASSESSMENT_STATUS_LABELS[a.status]} />
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}

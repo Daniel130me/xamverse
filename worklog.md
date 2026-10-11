@@ -22,3 +22,19 @@ Stage Summary:
 - Deliverable: runnable interactive prototype (Next.js 16 + TS + Tailwind 4 + shadcn/ui + Zustand + recharts), single-entry SPA at /, ~56 screens, full E2E exam lifecycle across simulated peers, device simulator + guided scenario, 10 handoff docs.
 - Key decisions: hash router (single-route preview constraint); per-device state as the core simulation primitive; scenario presets for instant demo jumps; simulation chrome kept visually separate (violet); localStorage persistence with versioned key + Reset Demo.
 - Known limitations (documented): representative attempts carry full answers only for 12 students; browser localStorage quota guards via summary attempts; AI/licensing/security are simulations (labeled).
+
+---
+Task ID: 2
+Agent: Super Z (main agent)
+Task: Fix console errors — hydration mismatch on <body> and invalid nested <button> in TeacherDashboard
+
+Work Log:
+- Fix 1: Added suppressHydrationWarning to <body> in src/app/layout.tsx — browser extensions (e.g. Grammarly) inject data-new-gr-c-s-check-loaded / data-gr-ext-installed attributes before React hydrates; <html> already had the flag but <body> did not.
+- Fix 2: In src/components/prototype/screens/Dashboards.tsx (TeacherDashboard "My draft & pending assessments" list), the outer row was a native <button> containing a shadcn <Button> ("Submit for approval") — invalid HTML causing hydration error. Converted outer row to <div role="button" tabIndex={0}> with Enter/Space key handling, cursor-pointer, and focus-visible ring. Inner Button unchanged (stopPropagation preserved).
+- Scanned entire src/ for the same bug class with a static scanner (scripts/scan_nested_buttons.py): no other native <button> containing <Button>, no directly nested native buttons. StatCard already renders Card div[role=button] — safe.
+- E2E verified via agent-browser (fresh session): logged in as Daniel Ibrahim (DEV-017 scenario teacher) → drafts list renders → row click navigates to #/app/assessments/ASSESS-MATH-SS2-MIDTERM → inner "Submit for approval" navigates to #/app/sync with stopPropagation → 0 page errors in the whole session.
+- Investigated a transient "ReferenceError: local is not defined at SettingsScreen" — traced to stale error accumulation in the long-lived browser session from a pre-fix load (source + compiled chunk are both correct; fresh session reports 0 errors). No code change needed.
+
+Stage Summary:
+- Both reported console errors fixed; codebase scanned clean for nested-button patterns; teacher dashboard flow E2E-verified with 0 console errors.
+- Files changed: src/app/layout.tsx, src/components/prototype/screens/Dashboards.tsx; added scripts/scan_nested_buttons.py.
