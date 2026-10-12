@@ -195,7 +195,7 @@ export function LoginScreen() {
           )}
 
           <div className="mt-4 flex items-center justify-center text-xs text-muted-foreground">
-            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Last sign-in {fmtRelative(Object.values(store.world.users).find((u) => u.role === 'administrator')?.lastLoginAt)}</span>
+            <span className="flex items-center gap-1" suppressHydrationWarning><Clock className="h-3.5 w-3.5" /> Last sign-in {fmtRelative(Object.values(store.world.users).find((u) => u.role === 'administrator')?.lastLoginAt)}</span>
           </div>
         </div>
       </div>

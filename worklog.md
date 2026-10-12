@@ -73,3 +73,17 @@ Work Log:
 Stage Summary:
 - Prototype now presents as the real product: login page first with register/practice/join/import/restore paths, no simulation chrome in the UI; all demo/testing controls consolidated in the discreet DemoDock (user/role switcher kept per user request). WelcomeScreen component is now unused by routing (file retained).
 - Files changed: src/app/page.tsx, src/components/prototype/shell/AppShell.tsx, src/components/prototype/screens/LoginScreen.tsx, + new src/components/prototype/shell/DemoDock.tsx.
+
+---
+Task ID: 5
+Agent: Super Z (main agent)
+Task: Fix hydration mismatch on login page ("17 hrs ago" vs "18 hrs ago")
+
+Work Log:
+- Root cause: fmtRelative/fmtDate render time-relative strings in 50+ places across 10 screen files; the server SSRs a freshly-seeded world while the client hydrates with localStorage-persisted per-device state, so relative timestamps (and any persisted value) can disagree between server and client HTML.
+- Fix (global, page.tsx): mounted gate — the SPA now renders a neutral "Loading ExamHub…" shell on the server (verified via curl) and mounts the real UI only after hydration (useEffect + setMounted). All state-dependent content is client-rendered, eliminating this entire class of mismatch (timestamps, persisted device state, counts) in one place.
+- Fix (targeted, LoginScreen.tsx): suppressHydrationWarning on the "Last sign-in" relative timestamp as belt-and-braces.
+- Verified E2E: curl shows the SSR shell; fresh load and reload produce 0 errors / 0 hydration errors; empty-form submit shows validation error; real credentials (d.ibrahim@greenfieldacademy.ng) navigate to #/app/dashboard with teacher dashboard rendered; 0 errors after the full flow. tsc clean.
+
+Stage Summary:
+- Hydration mismatch class eliminated app-wide via the mounted gate; login smoke-tested end-to-end (validation + success path). Files changed: src/app/page.tsx, src/components/prototype/screens/LoginScreen.tsx.

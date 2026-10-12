@@ -21,12 +21,20 @@ import { DemoDock } from '@/components/prototype/shell/DemoDock';
 import { DashboardRouter } from '@/components/prototype/screens/Dashboards';
 import { ScreenRouter } from '@/components/prototype/screens/ScreenRouter';
 import { WalkthroughDrawer } from '@/components/prototype/screens/Walkthrough';
+import { GraduationCap } from 'lucide-react';
 
 export default function Home() {
   const store = useDemoStore();
   const route = store.route;
   const session = store.session;
   const path = route.path;
+
+  // The entire app is driven by per-device localStorage state and relative
+  // timestamps, so server-rendered content can never match the client's first
+  // render (e.g. "17 hrs ago" vs "18 hrs ago"). Render a neutral shell on the
+  // server and mount the real UI only on the client.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
 
   // debug/demo hook (also documented in README for support engineers)
   React.useEffect(() => {
@@ -44,6 +52,16 @@ export default function Home() {
   React.useEffect(() => {
     if (!store.hydrated) store.syncFromHash();
   }, [store.hydrated]);
+
+  if (!mounted) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <GraduationCap className="h-4 w-4 animate-pulse" /> Loading ExamHub…
+        </p>
+      </div>
+    );
+  }
 
   // fullscreen exam route
   if (path === '/exam') {
