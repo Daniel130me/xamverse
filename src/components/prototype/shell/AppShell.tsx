@@ -8,7 +8,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { useDemoStore } from '@/lib/prototype/store';
 import { NAV_GROUPS } from './nav-config';
-import { ROLE_LABELS, fmtRelative } from '@/lib/prototype/ui-utils';
+import { ROLE_LABELS } from '@/lib/prototype/ui-utils';
 import { UserAvatar } from '../shared/ui-kit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +19,7 @@ import {
   LayoutDashboard, School, CalendarRange, Network, BookOpen, Users, GraduationCap, UserCog, ShieldCheck, Layers,
   Sparkles, FileText, Stamp, MonitorPlay, ClipboardCheck, BarChart3, MonitorSmartphone, RefreshCcw, GitMerge, Bell,
   KeyRound, PackageCheck, DatabaseBackup, ScrollText, Settings, LifeBuoy, PanelLeftClose, PanelLeftOpen, LogOut,
-  Lock, UserCircle, ChevronDown, Moon, Sun, Radio, Wifi, WifiOff, Plus, CircleDot, Maximize2, X,
+  Lock, UserCircle, ChevronDown, Moon, Sun, Wifi, WifiOff, CircleDot, X,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
@@ -104,7 +104,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="border-t p-3 pb-16 text-[10px] leading-relaxed text-muted-foreground">
             <p className="font-medium text-foreground/70">Peer computer</p>
             <p>ID {device?.id} · {device?.ip}:{device?.port}</p>
-            <p className="mt-1">Every installation is an independent peer. Nothing here is production-secure.</p>
+            <p className="mt-1">Every installation is an independent peer on the school network.</p>
           </div>
         )}
       </aside>
@@ -125,8 +125,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {user && <UserMenu />}
           </div>
         </header>
-        <main className="flex-1 px-3 pb-24 pt-4 lg:px-6 lg:pb-20">{children}</main>
-        <SimulatorBar />
+        <main className="flex-1 px-3 pb-16 pt-4 lg:px-6 lg:pb-14">{children}</main>
       </div>
     </div>
   );
@@ -155,14 +154,13 @@ function NetworkStatusChip() {
   const lan = store.world.network.lanOnline;
   const online = lan && device?.online;
   return (
-    <button
-      onClick={() => { store.toggleNetwork(); toast(lan ? 'LAN disconnected (simulated)' : 'LAN reconnected (simulated)', { description: lan ? 'All peer transfers pause until the network is restored.' : 'Peer transfers resume automatically.' }); }}
-      className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors sm:flex ${online ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300'}`}
-      title="Click to simulate LAN offline / online"
+    <span
+      className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium sm:flex ${online ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300'}`}
+      title="Connection to the school's local network"
     >
       {online ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
       {online ? 'LAN online' : 'LAN offline'}
-    </button>
+    </span>
   );
 }
 
@@ -280,175 +278,5 @@ function MobileNav() {
         document.body
       )}
     </div>
-  );
-}
-
-// ============================================================
-// Device Simulator Bar — the demo control strip
-// ============================================================
-
-export function SimulatorBar() {
-  const store = useDemoStore();
-  const device = store.currentDevice();
-  const user = store.currentUser();
-  const [expanded, setExpanded] = React.useState(false);
-  const gfDevices = Object.values(store.world.devices).filter((d) => d.schoolId === device?.schoolId);
-
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t-2 border-violet-400 bg-violet-50/95 backdrop-blur dark:border-violet-700 dark:bg-violet-950/90">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-3 py-1.5 text-xs">
-        <span className="flex items-center gap-1 rounded bg-violet-600 px-1.5 py-0.5 font-bold text-white"><Radio className="h-3 w-3" /> SIMULATION</span>
-
-        {/* device switcher */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring" aria-label="Switch simulated computer">
-              <MonitorSmartphone className="h-3.5 w-3.5 text-violet-600" />
-              <span className="font-medium">{device?.name}</span>
-              <span className="text-muted-foreground">({store.activeDeviceId})</span>
-              <ChevronDown className="h-3 w-3 opacity-50" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-96 w-72 overflow-y-auto">
-            <DropdownMenuLabel>Switch active simulated computer</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {['DEV-001', 'DEV-005', 'DEV-008', 'DEV-011', 'DEV-017', 'DEV-022', 'DEV-024', 'DEV-026', 'DEV-043', 'DEV-090'].map((id) => (
-              <SimDeviceRow key={id} deviceId={id} />
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Lab computers (DEV-061 – DEV-100)</DropdownMenuLabel>
-            {gfDevices.filter((d) => d.index >= 61 && d.index <= 70).map((d) => (
-              <SimDeviceRow key={d.id} deviceId={d.id} />
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => store.navigate('/app/computers')}>See all 103 computers →</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* user switcher */}
-        {user ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 hover:bg-accent" aria-label="Switch demo user">
-                <UserAvatar name={user.name} hue={user.avatarHue} size="sm" />
-                <span className="hidden font-medium sm:inline">{user.name}</span>
-                <span className="text-muted-foreground hidden md:inline">· {ROLE_LABELS[user.role]}</span>
-                <ChevronDown className="h-3 w-3 opacity-50" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64">
-              <DropdownMenuLabel>Switch demo user (no passwords needed)</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DemoUserRow userId="u-admin" />
-              <DemoUserRow userId="u-admin2" />
-              <DemoUserRow userId="u-proprietor" />
-              <DemoUserRow userId="u-exoff" />
-              <DemoUserRow userId="u-teacher-math" />
-              <DemoUserRow userId="u-teacher-eng" />
-              <DemoUserRow userId="u-hod-grace" />
-              <DemoUserRow userId="u-invig" />
-              <DemoUserRow userId="stu-amina" />
-              <DemoUserRow userId="par-1" />
-              <DemoUserRow userId="u-support" />
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : (
-          <span className="rounded-md border border-dashed px-2 py-1 text-muted-foreground">No user signed in on this computer</span>
-        )}
-
-        {/* network toggle */}
-        <button
-          onClick={() => store.toggleNetwork()}
-          className={`flex items-center gap-1 rounded-md border px-2 py-1 font-medium ${store.world.network.lanOnline ? 'border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' : 'border-red-300 bg-red-100 text-red-800 dark:border-red-800 dark:bg-red-900 dark:text-red-200'}`}
-          aria-pressed={!store.world.network.lanOnline}
-        >
-          {store.world.network.lanOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-          LAN {store.world.network.lanOnline ? 'online' : 'offline'}
-        </button>
-
-        {/* device power toggle */}
-        <button
-          onClick={() => store.setDeviceOnline(store.activeDeviceId, !device?.online)}
-          className={`hidden items-center gap-1 rounded-md border px-2 py-1 font-medium sm:flex ${device?.online ? 'border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' : 'border-red-300 bg-red-100 text-red-800 dark:border-red-800 dark:bg-red-900 dark:text-red-200'}`}
-        >
-          <CircleDot className="h-3.5 w-3.5" />
-          This PC {device?.online ? 'online' : 'offline'}
-        </button>
-
-        <div className="ml-auto flex items-center gap-1.5">
-          <Button variant="outline" size="sm" className="h-6 border-violet-300 px-2 text-[11px] text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:text-violet-300" onClick={() => store.setWalkthroughOpen(true)}>
-            <Maximize2 className="mr-1 h-3 w-3" /> Guided scenario
-          </Button>
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
-            {expanded ? 'Hide' : 'More'}…
-          </Button>
-          <Button
-            variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-red-600 hover:text-red-700"
-            onClick={() => { if (confirm('Reset the entire demonstration? All simulated changes will be discarded.')) { store.resetDemo(); toast('Demo reset'); } }}
-          >
-            Reset demo
-          </Button>
-        </div>
-
-        {expanded && (
-          <div className="w-full border-t border-violet-200 pt-2 dark:border-violet-800">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">Load predefined scenario:</span>
-              {([
-                ['fresh', '1. Fresh start (exam is a draft on DEV-017)'],
-                ['approved', '2. Exam approved (ready to distribute)'],
-                ['distributed', '3. Distributed to all 100 computers'],
-                ['collected', '4. Results collected 97/100 (3 outstanding)'],
-                ['released', '5. Results released to students'],
-              ] as const).map(([key, label]) => (
-                <button key={key} onClick={() => { store.loadScenario(key); toast(`Scenario loaded: ${label}`); }} className="rounded-md border bg-background px-2 py-1 hover:bg-accent">
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 text-[10px] text-muted-foreground">
-              Simulator note: each computer keeps its own independent local records. Data only appears on another computer after a simulated transfer completes.
-              Storage on this device: {device ? `${(device.storageUsedMb / 1024).toFixed(1)} GB of ${(device.storageTotalMb / 1024).toFixed(0)} GB used` : '—'} · Last sync {fmtRelative(store.local()?.lastSyncAt)}
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SimDeviceRow({ deviceId }: { deviceId: string }) {
-  const store = useDemoStore();
-  const d = store.world.devices[deviceId];
-  if (!d) return null;
-  const active = store.activeDeviceId === deviceId;
-  return (
-    <DropdownMenuItem onClick={() => { store.switchDevice(deviceId); toast(`Switched to ${d.name} (${deviceId})`, { description: 'Previous session ended — sign in again on this computer.' }); }}>
-      <span className="flex w-full items-center justify-between gap-2">
-        <span className="truncate">{d.name} <span className="text-muted-foreground">{d.id}</span></span>
-        <span className="flex items-center gap-1.5">
-          {!d.paired && <span className="rounded bg-amber-100 px-1 text-[9px] text-amber-700 dark:bg-amber-900 dark:text-amber-300">unpaired</span>}
-          <span className={`h-2 w-2 rounded-full ${d.online && store.world.network.lanOnline ? 'bg-emerald-500' : 'bg-red-400'}`} />
-        </span>
-      </span>
-      {active && <span className="ml-1 text-violet-600">●</span>}
-    </DropdownMenuItem>
-  );
-}
-
-function DemoUserRow({ userId }: { userId: string }) {
-  const store = useDemoStore();
-  const u = store.world.users[userId];
-  if (!u || u.schoolId !== store.currentDevice().schoolId) return null;
-  return (
-    <DropdownMenuItem onClick={() => { store.switchUser(userId); toast(`Signed in as ${u.name}`, { description: `${ROLE_LABELS[u.role]} · on ${store.activeDeviceId}` }); }}>
-      <span className="flex items-center gap-2">
-        <UserAvatar name={u.name} hue={u.avatarHue} size="sm" />
-        <span>
-          <span className="block text-xs font-medium">{u.name}</span>
-          <span className="block text-[10px] text-muted-foreground">{u.demoLabel ?? ROLE_LABELS[u.role]}</span>
-        </span>
-      </span>
-    </DropdownMenuItem>
   );
 }

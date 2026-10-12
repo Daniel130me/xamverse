@@ -56,3 +56,20 @@ Work Log:
 
 Stage Summary:
 - Sidebar/nav drawer now renders above the main page at all viewport widths; change-password dialog fixed by the same portal change; sidebar footer no longer clipped by the simulator bar. Single file changed: src/components/prototype/shell/AppShell.tsx.
+
+---
+Task ID: 4
+Agent: Super Z (main agent)
+Task: Make prototype read like the real product — login-first entry, discreet demo controls
+
+Work Log:
+- Created src/components/prototype/shell/DemoDock.tsx: collapsed violet "Demo" pill (bottom-right, z-40) expanding into a portaled compact panel — user/role switcher (11 demo accounts, school-scoped, active highlighted), computer switcher (10 key devices + lab devices), LAN / this-PC toggles, 5 scenario presets, guided walkthrough (in-session), reset demo. Replaces the full-width violet SIMULATION bar.
+- Reworked LoginScreen into the product's entry page: removed Back button + violet "Simulated computer" badge (now neutral device chip), realistic subtitle, added "Register a new school" + "Practice without an account" outline buttons and Join/Import/Restore text links (deep-link to onboarding modes via navigate('/onboarding', {mode})), demo accounts collapsed behind "Testing? Open demo accounts" disclosure, auto-redirect to /app/dashboard if a session exists, removed "(simulated)" wording in favour of in-character copy.
+- page.tsx: route '/' (and default) now renders LoginScreen (Welcome screen removed from flow); DemoDock rendered on all screens except the fullscreen exam runner.
+- AppShell.tsx: deleted SimulatorBar + SimDeviceRow + DemoUserRow (~170 lines), LAN chip is now a passive status <span> (toggle moved to dock), sidebar footer meta-commentary softened, main bottom padding reduced (pb-16/lg:pb-14).
+- E2E verified (agent-browser): '/' shows login with all links; dock opens (320px panel), switching to administrator from login navigates to #/app/dashboard; in-app switch admin→student re-renders role dashboard ("Now testing: Amina Yusuf" toast, student stats visible); sign out returns to '#/' login; violet bar/SIMULATION text absent everywhere; 0 page errors; tsc clean for all touched files.
+- Screenshots: download/screenshots/login-first-page.png, admin-dashboard-realistic.png, student-dashboard-realistic.png.
+
+Stage Summary:
+- Prototype now presents as the real product: login page first with register/practice/join/import/restore paths, no simulation chrome in the UI; all demo/testing controls consolidated in the discreet DemoDock (user/role switcher kept per user request). WelcomeScreen component is now unused by routing (file retained).
+- Files changed: src/app/page.tsx, src/components/prototype/shell/AppShell.tsx, src/components/prototype/screens/LoginScreen.tsx, + new src/components/prototype/shell/DemoDock.tsx.

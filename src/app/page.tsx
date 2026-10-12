@@ -10,7 +10,6 @@ import { useDemoStore } from '@/lib/prototype/store';
 import { Toaster } from '@/components/ui/sonner';
 
 // Standalone screens
-import { WelcomeScreen } from '@/components/prototype/screens/WelcomeScreen';
 import { LoginScreen } from '@/components/prototype/screens/LoginScreen';
 import { OnboardingScreen } from '@/components/prototype/screens/OnboardingScreen';
 import { PracticeHub, PracticeSessionScreen } from '@/components/prototype/screens/PracticeScreens';
@@ -18,6 +17,7 @@ import { ExamRunner } from '@/components/prototype/screens/ExamRunner';
 
 // Shell + app screens
 import { AppShell } from '@/components/prototype/shell/AppShell';
+import { DemoDock } from '@/components/prototype/shell/DemoDock';
 import { DashboardRouter } from '@/components/prototype/screens/Dashboards';
 import { ScreenRouter } from '@/components/prototype/screens/ScreenRouter';
 import { WalkthroughDrawer } from '@/components/prototype/screens/Walkthrough';
@@ -55,12 +55,10 @@ export default function Home() {
     );
   }
 
-  // standalone routes
+  // standalone routes — the login page is the product's entry point
   let screen: React.ReactNode;
   switch (true) {
     case path === '/':
-      screen = <WelcomeScreen />;
-      break;
     case path === '/login':
       screen = <LoginScreen />;
       break;
@@ -81,12 +79,13 @@ export default function Home() {
       );
       break;
     default:
-      screen = <WelcomeScreen />;
+      screen = <LoginScreen />;
   }
 
   return (
     <>
       {screen}
+      <DemoDock />
       <Toaster richColors position="bottom-right" />
     </>
   );

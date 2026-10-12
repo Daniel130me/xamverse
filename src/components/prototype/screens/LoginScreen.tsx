@@ -1,6 +1,6 @@
 'use client';
 
-/** Login — real form + demonstration quick-login selector (no real credentials) */
+/** Login — the product's entry page. Realistic form + optional demo-account disclosure. */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
 import { ROLE_LABELS, fmtRelative } from '@/lib/prototype/ui-utils';
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { GraduationCap, ArrowLeft, Lock, UserRound, AlertTriangle, ChevronRight, MonitorSmartphone, KeyRound, Clock } from 'lucide-react';
+import { GraduationCap, Lock, UserRound, AlertTriangle, ChevronRight, ChevronDown, MonitorSmartphone, KeyRound, Clock, School, Globe, Network, Layers, DatabaseBackup } from 'lucide-react';
 import { toast } from 'sonner';
 
 const DEMO_USERS: { id: string; hint: string }[] = [
@@ -31,9 +31,16 @@ const DEMO_USERS: { id: string; hint: string }[] = [
 export function LoginScreen() {
   const store = useDemoStore();
   const device = store.currentDevice();
-  const [email, setEmail] = React.useState('d.ibrahim@greenfieldacademy.ng');
-  const [password, setPassword] = React.useState('demo1234');
+  const [showDemo, setShowDemo] = React.useState(false);
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
+
+  // a signed-in user landing on the login page goes straight to the app
+  React.useEffect(() => {
+    if (store.session) store.navigate('/app/dashboard');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.session]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +54,7 @@ export function LoginScreen() {
     }
     const user = Object.values(store.world.users).find((u) => u.email.toLowerCase() === email.toLowerCase());
     if (!user) {
-      setError('No account with that email on this school\u2019s local records. Try the demo accounts below.');
+      setError('No account with that email in this school\u2019s local records.');
       return;
     }
     if (user.status === 'suspended') {
@@ -85,22 +92,25 @@ export function LoginScreen() {
           </p>
           <div className="mt-6 space-y-2 text-xs text-emerald-100">
             <p className="flex items-center gap-2"><MonitorSmartphone className="h-4 w-4" /> You are signing in on <strong>{device?.name}</strong> ({store.activeDeviceId})</p>
-            <p className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Authentication is verified against local records (simulated)</p>
+            <p className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Authentication is verified against records on this computer</p>
           </div>
         </div>
-        <p className="text-xs text-emerald-200/80">Simulated prototype — no production credentials are validated.</p>
+        <p className="text-xs text-emerald-200/80">Works fully offline — school data never leaves this school's computers.</p>
       </div>
 
       {/* right panel */}
       <div className="flex w-full flex-col overflow-y-auto p-6 lg:w-1/2 lg:p-10">
         <div className="mb-6 flex items-center justify-between">
-          <Button variant="ghost" size="sm" onClick={() => store.navigate('/')}><ArrowLeft className="mr-1 h-4 w-4" /> Back</Button>
-          <Badge variant="outline" className="border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-300">Simulated computer: {device?.name}</Badge>
+          <div className="flex items-center gap-2 lg:hidden">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"><GraduationCap className="h-4 w-4" /></div>
+            <p className="text-sm font-bold">ExamHub</p>
+          </div>
+          <Badge variant="outline" className="gap-1 font-normal text-muted-foreground"><MonitorSmartphone className="h-3 w-3" /> {device?.name}</Badge>
         </div>
 
         <div className="mx-auto w-full max-w-md">
           <h2 className="text-xl font-bold">Sign in to {school?.shortName ?? 'your school'}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Use a real form or pick a demonstration account below — no passwords needed for demo accounts.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Use your school account. Authentication happens locally on this computer.</p>
 
           <form onSubmit={submit} className="mt-5 space-y-3">
             <div>
@@ -123,14 +133,38 @@ export function LoginScreen() {
             <Button type="submit" className="w-full"><Lock className="mr-1.5 h-4 w-4" /> Sign in</Button>
           </form>
 
-          <div className="my-5 flex items-center gap-3">
-            <Separator className="flex-1" />
-            <span className="text-xs text-muted-foreground">DEMONSTRATION ACCOUNTS</span>
-            <Separator className="flex-1" />
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Button variant="outline" className="h-9 text-xs" onClick={() => store.navigate('/onboarding')}>
+              <School className="mr-1.5 h-4 w-4" /> Register a new school
+            </Button>
+            <Button variant="outline" className="h-9 text-xs" onClick={() => store.navigate('/practice')}>
+              <Globe className="mr-1.5 h-4 w-4" /> Practice without an account
+            </Button>
           </div>
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            Setting up another computer?{' '}
+            <button type="button" className="text-primary hover:underline" onClick={() => store.navigate('/onboarding', { mode: 'join' })}>Join a school</button>
+            {' · '}
+            <button type="button" className="text-primary hover:underline" onClick={() => store.navigate('/onboarding', { mode: 'import' })}>Import data</button>
+            {' · '}
+            <button type="button" className="text-primary hover:underline" onClick={() => store.navigate('/onboarding', { mode: 'restore' })}>Restore backup</button>
+          </p>
 
-          <Card>
-            <CardContent className="max-h-80 space-y-1 overflow-y-auto p-2">
+          <button type="button" onClick={() => setShowDemo((v) => !v)} className="mt-6 flex w-full items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground" aria-expanded={showDemo}>
+            <UserRound className="h-3.5 w-3.5" /> {showDemo ? 'Hide demo accounts' : 'Testing? Open demo accounts'}
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showDemo ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showDemo && (
+            <>
+              <div className="my-4 flex items-center gap-3">
+                <Separator className="flex-1" />
+                <span className="text-xs text-muted-foreground">DEMO ACCOUNTS — ONE CLICK SIGN-IN</span>
+                <Separator className="flex-1" />
+              </div>
+
+              <Card>
+                <CardContent className="max-h-80 space-y-1 overflow-y-auto p-2">
               {DEMO_USERS.map(({ id, hint }) => {
                 const u = store.world.users[id];
                 if (!u) return null;
@@ -153,16 +187,15 @@ export function LoginScreen() {
                     </span>
                     <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                   </button>
-                );
+                  );
               })}
-            </CardContent>
-          </Card>
+              </CardContent>
+              </Card>
+            </>
+          )}
 
-          <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+          <div className="mt-4 flex items-center justify-center text-xs text-muted-foreground">
             <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Last sign-in {fmtRelative(Object.values(store.world.users).find((u) => u.role === 'administrator')?.lastLoginAt)}</span>
-            <button className="flex items-center gap-1 text-primary hover:underline" onClick={() => store.navigate('/onboarding')}>
-              <UserRound className="h-3.5 w-3.5" /> New school? Start setup
-            </button>
           </div>
         </div>
       </div>
