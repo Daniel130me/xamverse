@@ -109,7 +109,13 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
     node_b.sync.record_peer_address(&node_a.identity.device_id, addr_book_a);
 
     wait_for(
-        || count_objects(&node_b, "school_settings") == 1,
+        || {
+            let c = count_objects(&node_b, "school_settings");
+            if c > 0 {
+                println!("[diag-poll] count hit {c}");
+            }
+            c == 1
+        },
         "B to receive A's record",
     );
 
