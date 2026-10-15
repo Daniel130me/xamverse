@@ -33,6 +33,7 @@ impl PeerHandler for SyncEngine {
         // Clone the Arcs this message may need; the future must own them.
         let db = self.db.clone();
         let events = self.events.clone();
+        let identity_device_id = self.identity.device_id.clone();
         let identity_name = self.identity.name.clone();
         let identity_fingerprint = self.identity.fingerprint();
         let peer = peer.clone();
@@ -100,8 +101,11 @@ impl PeerHandler for SyncEngine {
                             );
                             Some(Envelope::new(
                                 "pair_pending",
+                                // The responder is THIS engine (reporting the
+                                // requester's id approved the wrong device —
+                                // caught by the integration suite).
                                 serde_json::to_value(PairPending {
-                                    responder_device_id: peer.card.device_id.clone(),
+                                    responder_device_id: identity_device_id,
                                     responder_name: identity_name,
                                     responder_fingerprint: identity_fingerprint,
                                 })
