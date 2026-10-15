@@ -1,0 +1,97 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/xamverse-events",
+    "crates/xamverse-storage",
+    "crates/xamverse-identity",
+    "crates/xamverse-audit",
+    "crates/xamverse-security",
+    "crates/xamverse-network",
+    "crates/xamverse-discovery",
+    "crates/xamverse-sync",
+    "crates/xamverse-licensing",
+    "crates/xamverse-backup",
+    "crates/xamverse-updater",
+    "crates/xamverse-web",
+    "crates/xamverse-core",
+    "tools/peer-cli",
+]
+# The Tauri desktop shell is an independent cargo package (it needs GUI system
+# libraries that headless CI/test machines do not have). It is built and
+# bundled by the dedicated desktop workflows in .github/workflows.
+exclude = ["src-tauri"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "UNLICENSED"
+authors = ["Daniel130me <kosokodaniel@gmail.com>"]
+repository = "https://github.com/Daniel130me/xamverse"
+
+[workspace.dependencies]
+# Internal crates — single place so version bumps stay consistent.
+xamverse-events = { path = "crates/xamverse-events" }
+xamverse-storage = { path = "crates/xamverse-storage" }
+xamverse-identity = { path = "crates/xamverse-identity" }
+xamverse-audit = { path = "crates/xamverse-audit" }
+xamverse-security = { path = "crates/xamverse-security" }
+xamverse-network = { path = "crates/xamverse-network" }
+xamverse-discovery = { path = "crates/xamverse-discovery" }
+xamverse-sync = { path = "crates/xamverse-sync" }
+xamverse-licensing = { path = "crates/xamverse-licensing" }
+xamverse-backup = { path = "crates/xamverse-backup" }
+xamverse-updater = { path = "crates/xamverse-updater" }
+xamverse-web = { path = "crates/xamverse-web" }
+xamverse-core = { path = "crates/xamverse-core" }
+
+# Async runtime and utilities.
+tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "fs", "signal"] }
+
+# Serialization. Payloads on the wire are versioned JSON envelopes.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Local database. SQLCipher provides encryption at rest; the vendored-openssl
+# feature compiles OpenSSL from source so no system crypto library is needed.
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+
+# Cryptography — established primitives only, no custom algorithms.
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+rand = "0.8"
+argon2 = "0.5"
+sha2 = "0.10"
+chacha20poly1305 = "0.10"
+snow = "0.9"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+
+# Web server for browser access.
+axum = { version = "0.7", features = ["http1", "json", "tokio", "ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "limit", "trace"] }
+
+# CLI and observability.
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Shared small utilities.
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+data-encoding = "2"
+dirs = "5"
+mdns-sd = "0.10"
+futures-util = "0.3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"

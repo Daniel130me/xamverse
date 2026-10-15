@@ -1,0 +1,4 @@
+# Build tuning for constrained CI/dev machines: the workspace compiles
+# vendored C code (SQLite/SQLCipher, OpenSSL) which is memory hungry.
+[build]
+jobs = 2

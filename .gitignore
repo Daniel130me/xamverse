@@ -56,3 +56,16 @@ server.log
 tool-results/
 dev.log
 server.log
+
+# --- XamVerse Phase 2 (desktop engine) -------------------------------------
+# Rust build outputs
+/target/
+# Local engine data directories created by tests and the peer CLI
+/engine-data/
+*.xamdb
+*.xamdb-wal
+*.xamdb-shm
+# Uploaded scratch material is not part of the product
+/upload/
+# Engine SDK build output
+packages/engine-sdk/dist/
