@@ -49,6 +49,8 @@ pub struct ObjectSummary {
     pub category: String,
     pub object_id: String,
     pub revision: i64,
+    /// The op id that produced the current revision (manifests reference it).
+    pub op_id: String,
     pub payload_sha256: String,
     pub tombstone: bool,
     pub lamport: i64,
@@ -273,7 +275,7 @@ impl ObjectsRepo {
     ) -> StorageResult<Vec<ObjectSummary>> {
         let (sql, bind_categories) = if categories.is_empty() {
             (
-                "SELECT category, object_id, current_revision, payload_sha256, tombstone, lamport
+                "SELECT category, object_id, current_revision, current_op_id, payload_sha256, tombstone, lamport
                  FROM sync_objects WHERE school_id = ?1 AND lamport > ?2
                  ORDER BY lamport LIMIT ?3"
                     .to_string(),
@@ -283,7 +285,7 @@ impl ObjectsRepo {
             let placeholders = vec!["?"; categories.len()].join(",");
             (
                 format!(
-                    "SELECT category, object_id, current_revision, payload_sha256, tombstone, lamport
+                    "SELECT category, object_id, current_revision, current_op_id, payload_sha256, tombstone, lamport
                      FROM sync_objects WHERE school_id = ?1 AND lamport > ?2 AND category IN ({placeholders})
                      ORDER BY lamport LIMIT ?3"
                 ),
@@ -305,9 +307,10 @@ impl ObjectsRepo {
                     category: row.get(0)?,
                     object_id: row.get(1)?,
                     revision: row.get(2)?,
-                    payload_sha256: row.get(3)?,
-                    tombstone: row.get::<_, i64>(4)? != 0,
-                    lamport: row.get(5)?,
+                    op_id: row.get(3)?,
+                    payload_sha256: row.get(4)?,
+                    tombstone: row.get::<_, i64>(5)? != 0,
+                    lamport: row.get(6)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -481,10 +484,21 @@ impl JobsRepo {
     /// Reset failed jobs towards a target so reconnection triggers a retry
     /// storm-free immediate pass.
     pub fn reset_for_target(conn: &Connection, target_device_id: &str) -> StorageResult<u64> {
-        let changed = exec(conn, 
+        let changed = exec(conn,
             "UPDATE sync_jobs SET status = 'queued', next_attempt_at = NULL, updated_at = ?2
              WHERE target_device_id = ?1 AND status IN ('failed','running')",
             params![target_device_id, now_rfc3339()],
+        )?;
+        Ok(changed as u64)
+    }
+
+    /// Requeue every stuck `running` job — used at engine startup after a
+    /// crash or unclean shutdown (the queue is durable, the executor is not).
+    pub fn reset_running(conn: &Connection) -> StorageResult<u64> {
+        let changed = exec(conn,
+            "UPDATE sync_jobs SET status = 'queued', next_attempt_at = NULL, updated_at = ?1
+             WHERE status = 'running'",
+            params![now_rfc3339()],
         )?;
         Ok(changed as u64)
     }

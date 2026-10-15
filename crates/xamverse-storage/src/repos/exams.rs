@@ -25,7 +25,7 @@ pub struct PackageRow {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AttemptRow {
     pub attempt_id: String,
     pub school_id: String,
@@ -39,7 +39,7 @@ pub struct AttemptRow {
     pub latest_chain_hash: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AttemptEventRow {
     pub seq: i64,
     pub attempt_id: String,

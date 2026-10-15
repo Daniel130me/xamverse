@@ -1,6 +1,6 @@
 [package]
 name = "xamverse-sync"
-description = "XamVerse engine component (implementation in progress)"
+description = "Durable peer-to-peer replication, conflict detection, sealed packages, attempt storage and result collection for the XamVerse engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,26 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+xamverse-storage = { workspace = true }
+xamverse-identity = { workspace = true }
+xamverse-security = { workspace = true }
+xamverse-audit = { workspace = true }
+xamverse-network = { workspace = true }
+xamverse-events = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+data-encoding = { workspace = true }
+rusqlite = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

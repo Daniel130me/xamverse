@@ -20,11 +20,17 @@ mod users;
 
 pub use backup::{BackupsRepo, BackgroundJobRow, BackgroundJobsRepo, UpdateHistoryRepo, UpdateStateRow};
 pub use conflict::{ConflictRow, ConflictsRepo, ConflictStatus, ConflictStrategy};
-pub use exams::{AttemptsRepo, CollectionReceiptRow, PackagesRepo};
+pub use exams::{
+    AttemptEventRow, AttemptRow, AttemptsRepo, CollectionReceiptRow, CollectionReceiptsRepo,
+    PackageRow, PackagesRepo,
+};
 pub use identity::{DeviceRow, DevicesRepo, TrustRepo, TrustState};
 pub use licence::LicencesRepo;
 pub use session::{LoginAttemptsRepo, SessionRow, SessionsRepo};
-pub use sync::{BlobRepo, CheckpointsRepo, JobKind, JobStatus, JobsRepo, ObjectRow, ObjectsRepo, OpsRepo};
+pub use sync::{
+    BlobRepo, CheckpointsRepo, JobKind, JobRow, JobStatus, JobsRepo, ObjectRow, ObjectSummary,
+    ObjectsRepo, OpRow, OpsRepo,
+};
 pub use users::{RoleRow, UserRow, UsersRepo};
 
 use crate::error::StorageError;
