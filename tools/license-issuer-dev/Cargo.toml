@@ -1,0 +1,25 @@
+[package]
+name = "license-issuer-dev"
+description = "Development/test licence issuer for XamVerse offline activation (NEVER ships production keys)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "license-issuer-dev"
+path = "src/main.rs"
+
+[dependencies]
+xamverse-licensing = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+data-encoding = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "xamverse-licensing"
-description = "XamVerse engine component (implementation in progress)"
+description = "Signed licence runtime with offline activation for the XamVerse engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,23 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+xamverse-storage = { workspace = true }
+xamverse-identity = { workspace = true }
+xamverse-audit = { workspace = true }
+xamverse-events = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+ed25519-dalek = { workspace = true }
+data-encoding = { workspace = true }
+rand = { workspace = true }
 
 [lints]
 workspace = true
