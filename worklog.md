@@ -87,3 +87,24 @@ Work Log:
 
 Stage Summary:
 - Hydration mismatch class eliminated app-wide via the mounted gate; login smoke-tested end-to-end (validation + success path). Files changed: src/app/page.tsx, src/components/prototype/screens/LoginScreen.tsx.
+
+---
+Task ID: 6
+Agent: Super Z (main agent)
+Task: XamVerse Phase 1 repository maintenance — inspect, harden, separate prototype/production layers, test, document, open PR
+
+Work Log:
+- Inspected repo state + all 10 handoff docs; baselined: tsc failed (~20 errors), 1 lint warning, no tests, no typecheck gate, screens bypassing the service layer via useDemoStore.setState, ui-kit living under the prototype namespace. Dev server healthy.
+- fix (667540a): added missing ApprovalRequest model to types.ts; repaired ui-utils import path; fixed audit tuple arity + missing UpdateState.distributedTo + missing fill_blank correct field in seeds; removed duplicate object keys in saveAnswer/savePracticeAnswer merges; dropped stale 'onboarded' persist key; extended saveQuestion opts with change note; fixed screen-level type defects (dynamic route candidates, user status union, update history rows, nonexistent Badge re-export, ApprovalRequest 'to' field); excluded examples/skills/scripts from typecheck. tsc + eslint clean.
+- refactor (3cfb298): added store actions updateSchoolProfile / createClass / setUserStatus / revokeBrowserSession / gotoPracticeQuestion; converted all 5 direct useDemoStore.setState screen call sites (School profile, Classes, Users, Browser-session revoke, Practice prev/next). UI no longer touches simulation internals.
+- feat (bf14492): created src/lib/prototype/service-contracts.ts — compiler-checked service interfaces (structural Picks of DemoStore) grouped per INTEGRATION_CONTRACTS.md, with a compile-time coverage assertion (UncontractedActions = never) that quarantines demo controls; exported DemoStore.
+- refactor (80a2524): moved production-safe ui-kit.tsx to src/components/shared/ and ui-utils.tsx to src/lib/ (zero simulation imports); rewrote 16 importing files; docs updated. prototype/** now contains only simulation.
+- test (07c46f7): added vitest + jsdom, vitest.config.ts, scripts (test/test:watch/typecheck); 19-case suite pinning seed integrity, per-device auth + RBAC, version-locked approvals, approval roundtrip across peers, distribution w/ offline blocking + auto-resume, 9-type auto-marking, collector routing, duplicate-submission dedup (97→98 + conflict), retry/cancel, conflict audit targeting, practice, admin actions. Learned: DEV-071/089/096 seeded offline by design (the 97/100 scenario); conflict audits write to the two affected devices.
+- docs (9f73c8c): INTEGRATION_CONTRACTS (compiler-checked contracts, corrected School/User service status), CODEX_PHASE2_HANDOFF (drop-in-compatibility acceptance note), PHASE3_HANDOFF (contracts+tests under 'what exists', new execution step), READMEs (typecheck/test commands + new layout), gitignored tool-results/ artifacts.
+- Verified: tsc clean, eslint clean, 19/19 tests, production build OK, agent-browser E2E (login → teacher dashboard → 6 routes; profile save via updateSchoolProfile; user toggle via setUserStatus) with 0 console errors.
+- Git: rewrote stray UUID tip on main → 'chore: add demo screenshots and git tooling helpers' (89967ec) and pushed main; created feat/phase1-handoff with the 6 work commits and pushed it. Sandbox auto-committer switched HEAD back to main mid-session; recovered topology (main=89967ec, feature=main+6).
+- PR creation via API returned 403 (fine-grained PAT lacks pull-requests:write); pushed branch + saved ready-to-paste PR title/body at download/pr-description.md (compare URL: github.com/Daniel130me/xamverse/compare/main...feat/phase1-handoff).
+
+Stage Summary:
+- Deliverable: hardened, fully type-safe prototype with a compiler-enforced service boundary, production-safe shared UI layer, 19-case behavioural suite, refreshed handoff docs; feature branch pushed, PR ready to open manually.
+- Key decisions: contracts as Pick<DemoStore,…> (can never drift); demo controls quarantined in DemoControlService; tests double as the acceptance gate for Phase 2/3 engine swaps.
