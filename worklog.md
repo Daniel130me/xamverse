@@ -108,3 +108,22 @@ Work Log:
 Stage Summary:
 - Deliverable: hardened, fully type-safe prototype with a compiler-enforced service boundary, production-safe shared UI layer, 19-case behavioural suite, refreshed handoff docs; feature branch pushed, PR ready to open manually.
 - Key decisions: contracts as Pick<DemoStore,…> (can never drift); demo controls quarantined in DemoControlService; tests double as the acceptance gate for Phase 2/3 engine swaps.
+
+---
+Task ID: PHASE2-MAIN
+Agent: main orchestrator (Super Z)
+Task: Implement the Phase 2 desktop engine on feat/desktopz per the master engineering prompt
+
+Work Log:
+- Authored 13 crates + 2 tools (events, storage, identity, security, audit, network, discovery, sync, licensing, backup, updater, web, core; peer-cli, license-issuer-dev)
+- SQLCipher storage with checksum-verified forward-only migrations and 22-table infrastructure schema
+- Noise XX transport with handshake-bound device cards; mDNS + manual discovery; pairing with engine-side trust policy
+- Signed op-log replication (Lamport clocks, CAS revisions, per-category conflict policies), durable outbox, resumable blob transfers
+- Licensing (offline activation, device binding), encrypted backups (WAL-checkpoint capture), signed update pipeline
+- Axum browser bridge (47811) with sessions, RBAC, tenant-scoped SSE
+- Integration tests A/C/D over real TCP; fixed a real pairing bug (responder id) and a WAL backup data-loss bug found by tests
+- docs/phase2: 14 documents + 6 ADRs; 79 tests green across the workspace
+
+Stage Summary:
+- Branch feat/desktopz pushed (baa5574); PR to feat/phase1-handoff pending token permission — compare link provided to the user
+- packages/engine-sdk and src-tauri remain contract-specified next steps (documented in ENGINE_API.md / UPDATES_AND_INSTALLERS.md)
