@@ -127,3 +127,17 @@ Work Log:
 Stage Summary:
 - Branch feat/desktopz pushed (baa5574); PR to feat/phase1-handoff pending token permission — compare link provided to the user
 - packages/engine-sdk and src-tauri remain contract-specified next steps (documented in ENGINE_API.md / UPDATES_AND_INSTALLERS.md)
+
+---
+Task ID: STATUS-VERIFY
+Agent: Super Z (main agent)
+Task: Status verification pass — confirm what is implemented/testable, clean local main
+
+Work Log:
+- Fetched origin: feat/desktopz local == origin (24c6892d), feat/phase1-handoff == origin (3d964b1).
+- Found and removed junk commit 5aaa010d on local main (entire target/ build dir committed by sandbox auto-committer, never pushed). Mixed reset to origin/main (89967ec); build cache kept on disk untracked.
+- Re-verified on feat/desktopz: bun run typecheck clean; vitest 19/19 passed; cargo test --workspace 79 passed / 0 failed (incl. integration-tests crate over real TCP).
+- Note: sandbox auto-switches HEAD back to main between tool calls; use atomic checkout+command chains when working on feat/desktopz.
+
+Stage Summary:
+- All claimed test evidence reconfirmed green at 24c6892d. Local main clean and matching origin. feat/desktopz remains the integration branch; PR compare link feat/phase1-handoff...feat/desktopz.
