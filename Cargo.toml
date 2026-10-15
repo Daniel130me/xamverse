@@ -16,6 +16,7 @@ members = [
     "crates/xamverse-core",
     "tools/peer-cli",
     "tools/license-issuer-dev",
+    "tests/integration",
 ]
 # The Tauri desktop shell is an independent cargo package (it needs GUI system
 # libraries that headless CI/test machines do not have). It is built and
@@ -44,6 +45,7 @@ xamverse-backup = { path = "crates/xamverse-backup" }
 xamverse-updater = { path = "crates/xamverse-updater" }
 xamverse-web = { path = "crates/xamverse-web" }
 xamverse-core = { path = "crates/xamverse-core" }
+xamverse-integration-tests = { path = "tests/integration" }
 
 # Async runtime and utilities.
 tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "fs", "signal"] }

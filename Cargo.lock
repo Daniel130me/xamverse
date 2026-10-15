@@ -2174,6 +2174,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "xamverse-integration-tests"
+version = "0.2.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "xamverse-audit",
+ "xamverse-core",
+ "xamverse-events",
+ "xamverse-identity",
+ "xamverse-network",
+ "xamverse-security",
+ "xamverse-storage",
+ "xamverse-sync",
+]
+
+[[package]]
 name = "xamverse-licensing"
 version = "0.2.0"
 dependencies = [

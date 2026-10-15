@@ -47,6 +47,19 @@ pub struct SenderContext<'a> {
     pub trusted: bool,
 }
 
+/// Named context for code paths that drive the pipeline without a socket
+/// (integration tests, authorized manual resolution flows).
+pub struct ApplyPipelineContext;
+
+impl ApplyPipelineContext {
+    pub fn for_test(device_id: &str) -> SenderContext<'_> {
+        SenderContext {
+            device_id,
+            trusted: true,
+        }
+    }
+}
+
 impl ApplyPipeline {
     pub fn new(db: Arc<Database>, local_device_id: String, events: Arc<EventBus>) -> Self {
         Self {

@@ -1,0 +1,25 @@
+[package]
+name = "xamverse-integration-tests"
+description = "Cross-engine integration and security regression tests for the XamVerse desktop engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+xamverse-core = { workspace = true }
+xamverse-storage = { workspace = true }
+xamverse-identity = { workspace = true }
+xamverse-security = { workspace = true }
+xamverse-sync = { workspace = true }
+xamverse-events = { workspace = true }
+xamverse-network = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+xamverse-audit = { workspace = true }
+tempfile = "3"
+
+[lints]
+workspace = true

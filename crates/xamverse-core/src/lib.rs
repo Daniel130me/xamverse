@@ -57,6 +57,7 @@ pub struct Engine {
     pub manual_peers: Arc<ManualPeers>,
     pub(crate) discovery: tokio::sync::Mutex<Option<Discovery>>,
     pub(crate) server: tokio::sync::Mutex<Option<PeerServer>>,
+    pub(crate) peer_addr: std::sync::Mutex<Option<std::net::SocketAddr>>,
     pub(crate) runner: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     pub(crate) _lock: std::fs::File,
 }
@@ -162,6 +163,7 @@ impl Engine {
             manual_peers,
             discovery: tokio::sync::Mutex::new(None),
             server: tokio::sync::Mutex::new(None),
+            peer_addr: std::sync::Mutex::new(None),
             runner: tokio::sync::Mutex::new(None),
             _lock: lock,
         }))
@@ -197,7 +199,9 @@ impl Engine {
             handler,
         )
         .await?;
+        let bound = server.bind_addr;
         *self.server.lock().await = Some(server);
+        *self.peer_addr.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(bound);
 
         // Durable job runner.
         let runner = self.sync.spawn_job_runner();
@@ -285,6 +289,15 @@ impl Engine {
 
     pub fn platform(&self) -> &'static str {
         current_platform()
+    }
+
+    /// The bound peer listener address (ephemeral-port aware). `None` before
+    /// `start()` or after `stop()`.
+    pub fn peer_addr(&self) -> Option<std::net::SocketAddr> {
+        *self
+            .peer_addr
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 

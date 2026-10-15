@@ -23,7 +23,7 @@ pub mod op;
 pub mod runner;
 pub mod store;
 
-pub use apply::ApplyPipeline;
+pub use apply::{ApplyPipeline, ApplyPipelineContext, SenderContext};
 pub use conflict::{ConflictService, Resolution};
 pub use engine::SyncEngine;
 pub use local::{LocalOps, MAX_INLINE_PAYLOAD};
