@@ -58,6 +58,8 @@ All commands return typed results; the UI store actions map 1:1 onto them (see s
 | AI generation with predefined outputs | cloud provider + local model hook |
 | Device Simulator (device/user/network switching) | **keep** — it is a demo tool, separable from production components; gate behind a build flag |
 
+**Acceptance for every replacement:** the UI calls the store only through the grouped interfaces in `src/lib/prototype/service-contracts.ts`, and the vitest suite in `src/lib/prototype/__tests__/store.test.ts` pins the expected behaviour (state machines, version locking, dedup, RBAC, offline auto-resume). An engine implementation that satisfies those contracts is drop-in compatible — no screen changes required.
+
 ## 6. Technical assumptions needing validation
 1. LAN discovery works on typical school Wi-Fi APs (multicast often blocked → manual IP fallback must be first-class).
 2. 100 simultaneous package transfers (≈350 KB each) complete in seconds on 100 Mbit+ LANs; chunking strategy for larger media.

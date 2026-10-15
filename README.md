@@ -11,8 +11,10 @@ A complete, clickable prototype of an **offline-first, decentralized school exam
 The dev server runs on port 3000 (the preview panel shows it automatically; use **Open in New Tab** for the best experience).
 
 ```bash
-bun run dev     # already running in this environment
-bun run lint    # code quality check
+bun run dev         # already running in this environment
+bun run lint        # code quality check
+bun run typecheck   # strict TypeScript gate (tsc --noEmit)
+bun run test        # vitest suite — service-layer behaviour (19 cases)
 ```
 
 The entire app is a client-side SPA exposed on `/` with an internal hash router (`#/login`, `#/app/assessments`, `#/exam`, …). Source layout:

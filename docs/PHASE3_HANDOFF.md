@@ -6,7 +6,8 @@ Handoff for the application development agent (Phase 3). Phase 1 delivered a com
 - **All screens & navigation** (`src/components/prototype/screens/*`, `src/components/prototype/shell/*`) — layouts, states, copy and interaction patterns are the agreed UX reference.
 - **Design system** (`docs/DESIGN_SYSTEM.md`, `src/components/shared/ui-kit.tsx` — production-safe, reusable as-is) — tokens, components, patterns.
 - **Type definitions** (`src/lib/prototype/types.ts`) — conceptual models for all entities.
-- **Service boundaries** (`src/lib/prototype/store.ts` action signatures ≈ `docs/INTEGRATION_CONTRACTS.md`).
+- **Service boundaries** (`src/lib/prototype/service-contracts.ts` — compiler-checked interfaces per `docs/INTEGRATION_CONTRACTS.md`; implemented today by `store.ts`).
+- **Behavioural tests** (`src/lib/prototype/__tests__/store.test.ts`) — 19 vitest cases pinning the state machines, dedup, RBAC and sync semantics; the acceptance suite for any engine swap.
 - **Seed scenarios** (`src/lib/prototype/seed/*`) — as fixtures for tests and demos.
 
 ## 2. Conversion map: mock → production
@@ -46,7 +47,8 @@ Handoff for the application development agent (Phase 3). Phase 1 delivered a com
 5. Results, marking, moderation, exports; analytics queries.
 6. Licensing, updates, backups, browser-access features.
 7. Conflict engine integration; notifications bus; audit queries.
-8. Accessibility & responsive polish pass; localisation hooks (`next-intl` is installed).
+8. Promote the remaining screen-level simulations (subject creation, invitations, password resets, custom roles, enrollment imports) into `SchoolService`/`UserService` store actions per `INTEGRATION_CONTRACTS.md`.
+9. Accessibility & responsive polish pass; localisation hooks (`next-intl` is installed).
 
 ## 5. Acceptance inheritance
 All 28 acceptance criteria in the Phase 1 brief apply, plus: no UI rewrite of prototype screens should be required when swapping mocks — if a UI change is forced by the engine, document the deviation in the PR referencing this file.

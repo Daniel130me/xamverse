@@ -2,6 +2,8 @@
 
 Proposed service boundaries for Phase 2 (desktop engine — "Codex") and Phase 3 (application development agent). The prototype implements every operation as a mock in `src/lib/prototype/store.ts`; UI components never touch simulation internals directly — they call these store actions, which mirrors a service layer.
 
+**Compiler-checked contracts:** `src/lib/prototype/service-contracts.ts` groups the store's action surface into the TypeScript interfaces below (as structural `Pick`s, so they can never drift from the implementation). A compile-time coverage assertion (`UncontractedActions = never`) forces every business action to belong to a service; prototype-only demo controls are quarantined in `DemoControlService`. Engine teams should implement — and Phase 3 should wire the UI against — these grouped interfaces.
+
 ## Service interfaces
 
 ### AuthService (mock implemented)
@@ -13,8 +15,8 @@ Proposed service boundaries for Phase 2 (desktop engine — "Codex") and Phase 3
 | `changePassword()` | simulated | ✅ + recovery codes |
 | `verifyLocalAuthCache()` | offline sign-in support | ✅ |
 
-### SchoolService / UserService (mock implemented)
-`updateSchoolProfile`, `createClass`, `createSubject`, `inviteUser`, `setUserStatus`, `resetPassword`, `createCustomRole`, `updateRolePermissions`, `enrollStudents(bulk)`, `promoteStudent`, `transferStudent`, `generateRegCode`.
+### SchoolService / UserService (partially mock implemented)
+Implemented as store actions today: `updateSchoolProfile`, `createClass`, `setUserStatus`, `revokeBrowserSession` (all exercised by tests). Remaining operations — `createSubject`, `inviteUser`, `resetPassword`, `createCustomRole`, `updateRolePermissions`, `enrollStudents(bulk)`, `promoteStudent`, `transferStudent`, `generateRegCode` — are screen-level simulations in Phase 1 and become real store actions in Phase 3.
 Requires: local DB; permission verification (`users.manage`, `roles.manage`); audit writes.
 
 ### QuestionBankService (mock implemented)
@@ -82,3 +84,5 @@ Distinct from sync: backups protect one device; sync replicates across peers.
 
 ## Mocks Codex must replace
 Every action body in `src/lib/prototype/store.ts` (transfer simulation via `tick()`, seeded world via `buildWorld()`, hash-based auth, licence/update simulations). The UI must keep depending only on the action signatures above so implementations can swap without UI rewrites. Persisted localStorage (`examhub-demo-v1`) is demo-only.
+
+The behavioural specification of every mock is pinned by the vitest suite (`src/lib/prototype/__tests__/store.test.ts`, `bun run test`) — an engine implementation that passes the same assertions is drop-in compatible.

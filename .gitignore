@@ -52,3 +52,7 @@ prompt
 server.log
 # Skills directory
 /skills/
+# sandbox tooling artifacts
+tool-results/
+dev.log
+server.log
