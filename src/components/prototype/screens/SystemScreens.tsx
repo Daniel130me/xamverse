@@ -299,7 +299,7 @@ export function UpdatesScreen() {
       <div className="mt-4">
         <SectionCard title="Update history">
           <DataTable
-            rows={us.history}
+            rows={us.history.map((h, i) => ({ ...h, id: `${h.version}-${i}` }))}
             rowKey={(h, i) => `${h.version}-${i}`}
             searchable={false}
             pageSize={6}
@@ -520,8 +520,8 @@ export function SettingsScreen() {
                 return (
                   <button key={label as string} onClick={() => toast(`${label} selected`)} className="rounded-xl border p-4 text-left hover:border-primary/50">
                     <I className="h-5 w-5 text-primary" />
-                    <p className="mt-1.5 text-sm font-semibold">{label}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
+                    <p className="mt-1.5 text-sm font-semibold">{label as string}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{desc as string}</p>
                   </button>
                 );
               })}

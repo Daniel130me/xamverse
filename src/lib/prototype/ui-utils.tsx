@@ -1,5 +1,5 @@
 /** Shared formatting + status utilities for the prototype */
-import type { AssessmentStatus, QuestionStatus, QuestionType, Role, TransferStatus, ConflictStatus } from '../types';
+import type { AssessmentStatus, QuestionStatus, QuestionType, Role, TransferStatus, ConflictStatus } from './types';
 
 export const ROLE_LABELS: Record<Role, string> = {
   proprietor: 'Proprietor',

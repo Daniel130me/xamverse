@@ -300,6 +300,7 @@ function emptyLocal(deviceId: string): DeviceLocalState {
     updateState: {
       currentVersion: '1.4.0',
       autoUpdate: false,
+      distributedTo: [],
       history: [
         { version: '1.4.0', at: daysAgo(14), status: 'installed', note: 'Imported offline package, installed successfully.' },
         { version: '1.3.2', at: daysAgo(45), status: 'installed', note: 'LAN distribution from DEV-001.' },
@@ -984,7 +985,7 @@ export function buildWorld(): DemoWorld {
   locals[KEY_DEVICES.exoff].conflicts = [conflicts[0]].map((c) => ({ ...c }));
 
   // audit logs
-  const mkAudit = (deviceId: string, rows: [number, string, string, string, string, string, string, 'success' | 'failure' | 'warning'][]) =>
+  const mkAudit = (deviceId: string, rows: [number, string, string, string, string, string, 'success' | 'failure' | 'warning'][]) =>
     rows.map(([dayOffset, time, userName, action, target, detail, status], ix) => ({
       id: `aud-${deviceId}-${ix}`,
       at: `${daysAgo(dayOffset).slice(0, 11)}${time}:00.000Z`,

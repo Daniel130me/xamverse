@@ -80,7 +80,7 @@ export function ScreenRouter() {
   const parts = rawPath.split('/').filter(Boolean);
   let path = rawPath;
   if (!ROUTES[path] && parts.length >= 3 && parts[0] === 'app') {
-    const candidates = [];
+    const candidates: string[] = [];
     for (let cut = parts.length - 1; cut >= 2; cut--) {
       candidates.push(`/${parts.slice(0, cut).join('/')}/detail`);
       candidates.push(`/${parts.slice(0, cut).join('/')}`);

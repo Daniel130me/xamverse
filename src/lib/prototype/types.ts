@@ -616,6 +616,26 @@ export interface UpdateState {
   history: { version: string; at: string; status: 'installed' | 'failed' | 'rolled_back'; note: string }[];
 }
 
+/** Approval request for an assessment (lives on the reviewer's device until decided) */
+export interface ApprovalRequest {
+  id: string;
+  assessmentId: string;
+  /** version submitted for review — the decision binds to this exact version */
+  version: number;
+  assessmentName: string;
+  subjectId: string;
+  requestedBy: string;
+  requestedByName: string;
+  fromDeviceId: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected' | 'revision_requested';
+  questionCount: number;
+  totalMarks: number;
+  note?: string;
+  decisionBy?: string;
+  decisionAt?: string;
+}
+
 export interface DeviceLocalState {
   deviceId: string;
   /** locally-known questions */

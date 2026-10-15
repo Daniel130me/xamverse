@@ -88,7 +88,7 @@ interface DemoStore {
   roleDef: () => RoleDefinition | undefined;
 
   // ----- data mutations (all local-device scoped unless noted) -----
-  saveQuestion: (q: Question, opts?: { silent?: boolean }) => void;
+  saveQuestion: (q: Question, opts?: { silent?: boolean; note?: string }) => void;
   deleteQuestion: (id: string) => void;
   saveAssessment: (a: Assessment, summary?: string) => void;
   submitAssessmentForApproval: (assessmentId: string, targetDeviceId: string) => void;
@@ -471,7 +471,8 @@ export const useDemoStore = create<DemoStore>()(
           updatedAt: nowIso(),
         };
         local.questions[q.id] = updated;
-        get().audit('question_changed', q.id, `${existing ? 'Updated' : 'Created'} question "${q.statement.slice(0, 48)}…" (v${updated.version})`, 'success');
+        const note = opts?.note ? ` — ${opts.note}` : '';
+        get().audit('question_changed', q.id, `${existing ? 'Updated' : 'Created'} question "${q.statement.slice(0, 48)}…" (v${updated.version})${note}`, 'success');
         if (!opts?.silent) {
           notify({ world: get().world } as DemoStore, get().activeDeviceId, {
             kind: 'sync_progress', title: existing ? 'Question updated' : 'Question saved',
@@ -800,9 +801,9 @@ export const useDemoStore = create<DemoStore>()(
         if (!attempt || attempt.status !== 'in_progress') return;
         const existing = attempt.answers[questionId];
         const merged: AnswerRecord = {
-          questionId,
-          state: 'answered',
           ...existing,
+          questionId,
+          state: existing?.state ?? 'answered',
           ...patch,
         };
         if (merged.selected && merged.selected.length === 0 && !merged.text && !merged.ordering && !merged.pairs) {
@@ -968,7 +969,7 @@ export const useDemoStore = create<DemoStore>()(
         const { practice } = get();
         if (!practice) return;
         const existing = practice.answers[questionId];
-        practice.answers[questionId] = { questionId, state: 'answered', ...existing, ...patch };
+        practice.answers[questionId] = { ...existing, questionId, state: existing?.state ?? 'answered', ...patch };
         set({ practice: { ...practice } });
       },
       finishPractice: () => {
@@ -1261,7 +1262,6 @@ export const useDemoStore = create<DemoStore>()(
         session: state.session,
         activeExam: state.activeExam,
         practice: state.practice,
-        onboarded: state.onboarded,
         booted: true,
       }),
       onRehydrateStorage: () => (state) => {

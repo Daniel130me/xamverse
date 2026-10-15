@@ -557,7 +557,7 @@ export function AssessmentDetailScreen() {
                 {requests.map((r) => (
                   <div key={r.id} className="rounded-lg border p-2.5 text-xs">
                     <p className="font-medium">{r.assessmentName} v{r.version}</p>
-                    <p className="text-muted-foreground">to {r.to ?? 'reviewer'} · {fmtRelative(r.requestedAt)}</p>
+                    <p className="text-muted-foreground">from {r.fromDeviceId} · {fmtRelative(r.requestedAt)}</p>
                     <div className="mt-1"><StatusBadge status={r.status} /></div>
                   </div>
                 ))}

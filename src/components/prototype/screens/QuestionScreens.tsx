@@ -61,7 +61,7 @@ export function QuestionBanksScreen() {
       key: 'actions', header: '', render: (q: Question) => (
         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
           <Button variant="ghost" size="sm" onClick={() => setEditing(q)}><Pencil className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="sm" onClick={() => { const copy = { ...q, id: `Q-${Date.now()}`, status: 'draft' as const, statement: q.statement, version: 1 }; store.saveQuestion(copy, 'Duplicated'); toast.success('Question duplicated as draft'); }}><Copy className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="sm" onClick={() => { const copy = { ...q, id: `Q-${Date.now()}`, status: 'draft' as const, statement: q.statement, version: 1 }; store.saveQuestion(copy, { note: 'Duplicated' }); toast.success('Question duplicated as draft'); }}><Copy className="h-3.5 w-3.5" /></Button>
         </div>
       ),
     },
@@ -560,7 +560,7 @@ export function AiAssistantScreen() {
   };
 
   const acceptToBank = () => {
-    generated.filter((_, i) => accepted.has(i)).forEach((q) => store.saveQuestion(q, 'Accepted from AI assistant (draft)'));
+    generated.filter((_, i) => accepted.has(i)).forEach((q) => store.saveQuestion(q, { note: 'Accepted from AI assistant (draft)' }));
     toast.success(`${accepted.size} questions saved to your drafts`, { description: 'They remain drafts — submit for review when ready.' });
     setGenerated([]);
     setGenerating(0);
@@ -682,7 +682,7 @@ export function AiAssistantScreen() {
                       <Badge variant="outline">{q.marks} marks</Badge>
                       <div className="ml-auto flex gap-1">
                         <Button variant="ghost" size="sm" onClick={() => { toast('Regenerating question ' + (i + 1) + '…'); setTimeout(() => { toast.success(`Question ${i + 1} regenerated (v2)`); }, 900); }}><RefreshCcw className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="sm" onClick={() => { store.saveQuestion(q, 'Accepted from AI assistant'); toast('Opened in drafts'); navigate('/app/questions'); }}><Pencil className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="sm" onClick={() => { store.saveQuestion(q, { note: 'Accepted from AI assistant' }); toast('Opened in drafts'); navigate('/app/questions'); }}><Pencil className="h-3.5 w-3.5" /></Button>
                       </div>
                     </div>
                     <p className="whitespace-pre-wrap text-sm font-medium">{q.statement}</p>

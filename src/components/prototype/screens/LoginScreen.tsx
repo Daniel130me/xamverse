@@ -39,7 +39,6 @@ export function LoginScreen() {
   // a signed-in user landing on the login page goes straight to the app
   React.useEffect(() => {
     if (store.session) store.navigate('/app/dashboard');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.session]);
 
   const submit = (e: React.FormEvent) => {

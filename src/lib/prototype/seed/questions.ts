@@ -111,6 +111,7 @@ const seeds: QSeed[] = [
     subjectId: 'sub-math', level: 'SS2', topic: 'Sequences and Series', subtopic: 'AP',
     type: 'fill_blank', difficulty: 'medium', estimatedTimeSec: 90, marks: 2,
     statement: 'In an arithmetic progression, the 3rd term is 9 and the 7th term is 21. The first term is {{blank1}} and the common difference is {{blank2}}.',
+    correct: [],
     blanks: [{ answer: '3' }, { answer: '3' }],
     explanation: 'a + 2d = 9, a + 6d = 21 → 4d = 12 → d = 3, a = 3.',
     tags: ['sequences'],

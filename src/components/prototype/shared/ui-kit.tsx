@@ -405,4 +405,4 @@ export function TransferProgress({ progress, speedMbps, status }: { progress: nu
   );
 }
 
-export { Badge, StatusBadge } from '@/lib/prototype/ui-utils';
+export { StatusBadge } from '@/lib/prototype/ui-utils';

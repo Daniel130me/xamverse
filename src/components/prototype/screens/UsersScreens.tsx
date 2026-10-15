@@ -82,7 +82,7 @@ export function UsersScreen() {
   const [inviteOpen, setInviteOpen] = React.useState(false);
 
   const toggleUser = (u: User) => {
-    const next = u.status === 'active' ? 'suspended' : 'active';
+    const next: User['status'] = u.status === 'active' ? 'suspended' : 'active';
     const world = { ...store.world, users: { ...store.world.users, [u.id]: { ...u, status: next } } };
     useDemoStore.setState({ world });
     store.audit('permission_change', u.id, `${u.name} account ${next === 'active' ? 'reactivated' : 'suspended'}`, 'warning');
