@@ -9,7 +9,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
   AnswerRecord, AppNotification, Assessment, AuditAction, AuditEvent, ConflictCase, Device,
-  DeviceLocalState, ExamAttempt, ExamPackage, PermissionKey, Question, RoleDefinition, SubmissionRecord,
+  DeviceLocalState, ExamAttempt, ExamPackage, PermissionKey, Question, RoleDefinition, School, SubmissionRecord,
   TransferTask, User,
 } from './types';
 import type { ActiveSession, DemoWorld } from './world';
@@ -104,6 +104,12 @@ interface DemoStore {
   resolveConflict: (conflictId: string, choice: 'a' | 'b' | 'merge' | 'both' | 'reject', note: string) => void;
   deferConflict: (conflictId: string) => void;
 
+  // ----- school & people administration (service layer) -----
+  updateSchoolProfile: (schoolId: string, patch: Partial<School>) => void;
+  createClass: (schoolId: string, name: string) => string;
+  setUserStatus: (userId: string, status: User['status']) => void;
+  revokeBrowserSession: (sessionId: string) => void;
+
   // ----- exam flow -----
   startAttempt: (assessmentId: string, studentId: string) => string | null;
   saveAnswer: (questionId: string, patch: Partial<AnswerRecord>) => void;
@@ -119,6 +125,7 @@ interface DemoStore {
   // ----- practice -----
   startPractice: (config: PracticeSessionState['config'], questionIds: string[]) => void;
   savePracticeAnswer: (questionId: string, patch: Partial<AnswerRecord>) => void;
+  gotoPracticeQuestion: (index: number) => void;
   finishPractice: () => void;
   exitPractice: () => void;
 
@@ -486,6 +493,43 @@ export const useDemoStore = create<DemoStore>()(
         const local = get().local();
         delete local.questions[id];
         get().audit('question_changed', id, 'Question deleted locally', 'success');
+        set({ world: { ...get().world } });
+      },
+
+      // ---------------- school & people administration ----------------
+      updateSchoolProfile: (schoolId, patch) => {
+        const { world, session } = get();
+        const school = world.schools[schoolId];
+        if (!school) return;
+        world.schools[schoolId] = { ...school, ...patch };
+        const user = session ? world.users[session.userId] : null;
+        get().audit('question_changed', schoolId, `School profile updated by ${user?.name ?? 'a user'}`, 'success');
+        set({ world: { ...get().world } });
+      },
+      createClass: (schoolId, name) => {
+        const { world } = get();
+        const id = `cls-new-${Date.now()}`;
+        const parts = name.trim().split(' ');
+        world.classes[id] = {
+          id, name: name.trim(),
+          level: parts[0], arm: parts[1] ?? 'A',
+          category: 'senior_secondary', capacity: 30,
+        };
+        set({ world: { ...get().world } });
+        return id;
+      },
+      setUserStatus: (userId, status) => {
+        const { world } = get();
+        const u = world.users[userId];
+        if (!u) return;
+        world.users[userId] = { ...u, status };
+        set({ world: { ...get().world } });
+      },
+      revokeBrowserSession: (sessionId) => {
+        const b = get().local().browserSessions.find((x) => x.id === sessionId);
+        if (!b) return;
+        b.active = false;
+        get().audit('unauthorized_attempt', sessionId, `Browser session revoked on ${get().activeDeviceId}`, 'warning');
         set({ world: { ...get().world } });
       },
 
@@ -971,6 +1015,12 @@ export const useDemoStore = create<DemoStore>()(
         const existing = practice.answers[questionId];
         practice.answers[questionId] = { ...existing, questionId, state: existing?.state ?? 'answered', ...patch };
         set({ practice: { ...practice } });
+      },
+      gotoPracticeQuestion: (index) => {
+        const { practice } = get();
+        if (!practice) return;
+        const max = practice.questionIds.length - 1;
+        set({ practice: { ...practice, currentIndex: Math.min(max, Math.max(0, index)) } });
       },
       finishPractice: () => {
         const { practice } = get();

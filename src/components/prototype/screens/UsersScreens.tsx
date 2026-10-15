@@ -83,8 +83,7 @@ export function UsersScreen() {
 
   const toggleUser = (u: User) => {
     const next: User['status'] = u.status === 'active' ? 'suspended' : 'active';
-    const world = { ...store.world, users: { ...store.world.users, [u.id]: { ...u, status: next } } };
-    useDemoStore.setState({ world });
+    store.setUserStatus(u.id, next);
     store.audit('permission_change', u.id, `${u.name} account ${next === 'active' ? 'reactivated' : 'suspended'}`, 'warning');
     toast.success(`${u.name} ${next === 'active' ? 'reactivated' : 'suspended'}`);
   };

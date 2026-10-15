@@ -633,7 +633,7 @@ export function BrowserAccessScreen() {
           <DialogHeader><DialogTitle>Revoke browser session?</DialogTitle><DialogDescription>The user will be signed out immediately; unsaved answers were already auto-saved locally.</DialogDescription></DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRevoke(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => { const world = { ...store.world }; const b = world.locals[store.activeDeviceId].browserSessions.find((x) => x.id === revoke); if (b) b.active = false; useDemoStore.setState({ world }); setRevoke(null); toast('Session revoked'); }}>Revoke session</Button>
+            <Button variant="destructive" onClick={() => { if (revoke) { store.revokeBrowserSession(revoke); setRevoke(null); toast('Session revoked'); } }}>Revoke session</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -36,9 +36,7 @@ export function SchoolProfileScreen() {
   const [form, setForm] = React.useState({ ...school });
 
   const save = () => {
-    const world = { ...store.world, schools: { ...store.world.schools, [school.id]: form } };
-    useDemoStore.setState({ world });
-    store.audit('question_changed', school.id, `School profile updated by ${store.currentUser()?.name}`, 'success');
+    store.updateSchoolProfile(school.id, form);
     setEdit(false);
     toast.success('School profile saved', { description: 'Changes are stored locally and sync to authorized peers.' });
   };
@@ -242,7 +240,7 @@ export function ClassesScreen() {
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. SS1 C" aria-label="Class name" />
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
-            <Button onClick={() => { if (name.trim()) { const id = `cls-new-${Date.now()}`; const world = { ...store.world, classes: { ...store.world.classes, [id]: { id, name: name.trim(), level: name.trim().split(' ')[0], arm: name.trim().split(' ')[1] ?? 'A', category: 'senior_secondary' as const, capacity: 30 } } }; useDemoStore.setState({ world }); toast.success(`Class "${name.trim()}" created`); setName(''); setAddOpen(false); } }}>Create class</Button>
+            <Button onClick={() => { if (name.trim()) { store.createClass(store.currentDevice().schoolId, name.trim()); toast.success(`Class "${name.trim()}" created`); setName(''); setAddOpen(false); } }}>Create class</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -265,9 +265,9 @@ export function PracticeSessionScreen() {
             </div>
           )}
           <div className="mt-6 flex items-center justify-between">
-            <Button variant="outline" size="sm" disabled={practice.currentIndex === 0} onClick={() => { const p = { ...store.practice!, currentIndex: practice.currentIndex - 1 }; useDemoStore.setState({ practice: p }); }}><ArrowLeft className="mr-1.5 h-4 w-4" /> Previous</Button>
+            <Button variant="outline" size="sm" disabled={practice.currentIndex === 0} onClick={() => store.gotoPracticeQuestion(practice.currentIndex - 1)}><ArrowLeft className="mr-1.5 h-4 w-4" /> Previous</Button>
             {practice.currentIndex < total - 1 ? (
-              <Button size="sm" onClick={() => { const p = { ...store.practice!, currentIndex: practice.currentIndex + 1 }; useDemoStore.setState({ practice: p }); }}>Next <ArrowRight className="ml-1.5 h-4 w-4" /></Button>
+              <Button size="sm" onClick={() => store.gotoPracticeQuestion(practice.currentIndex + 1)}>Next <ArrowRight className="ml-1.5 h-4 w-4" /></Button>
             ) : (
               <Button size="sm" onClick={() => { store.finishPractice(); toast.success('Practice finished'); }}><PartyPopper className="mr-1.5 h-4 w-4" /> Finish & see results</Button>
             )}
