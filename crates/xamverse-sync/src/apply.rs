@@ -242,6 +242,7 @@ impl ApplyPipeline {
             };
             OpsRepo::insert(conn, &row)?;
             ObjectsRepo::apply_op_state(conn, &row)?;
+            materialize_identity_record(conn, &row)?;
             let key = format!("{LAMPORT_KEY_PREFIX}{school_id}");
             let current_clock: i64 = KvRepo::get(conn, &key)?
                 .and_then(|v| v.parse().ok())
@@ -382,6 +383,79 @@ impl ApplyPipeline {
         let conn = self.db.lock();
         JobsRepo::reset_running(&conn)
     }
+}
+
+/// Materialize replicated identity records into the local users table.
+/// Authentication is engine-owned infrastructure (spec §10): a teacher
+/// created on node 17 must be able to log in on node 18 once the signed
+/// identity op arrives. Only engine-understood fields are consumed; the
+/// full payload remains in the op log for Phase 3's richer business layer.
+fn materialize_identity_record(conn: &rusqlite::Connection, row: &OpRow) -> StorageResult<()> {
+    if !matches!(row.category.as_str(), "staff_records" | "student_records") || row.tombstone {
+        return Ok(());
+    }
+    let Some(payload) = &row.payload_json else {
+        return Ok(());
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return Ok(()); // structural validation happens at the category gate
+    };
+    let user_id = value.get("user_id").and_then(|v| v.as_str());
+    let username = value.get("username").and_then(|v| v.as_str());
+    let (Some(user_id), Some(username)) = (user_id, username) else {
+        return Ok(());
+    };
+    let status = value
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("active")
+        .to_string();
+    let display_name = value
+        .get("display_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(username)
+        .to_string();
+    // NOTE: the replicated credential hash is stored as-is (it is already an
+    // Argon2id PHC string hashed by the enrolling node); it is never a
+    // plaintext secret on the wire.
+    let auth_hash = value
+        .get("auth_hash")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    xamverse_storage::repos::UsersRepo::upsert(
+        conn,
+        &xamverse_storage::repos::UserRow {
+            user_id: user_id.to_string(),
+            school_id: row.school_id.clone(),
+            username: username.to_string(),
+            display_name,
+            status,
+            auth_hash,
+            origin_device_id: Some(row.author_device_id.clone()),
+            revision: row.revision,
+            updated_at: xamverse_storage::now_rfc3339(),
+        },
+    )?;
+    // Role grants ride in the payload (the authorizer decided them); the
+    // engine applies them only against roles it already knows (builtin or
+    // replicated role_permissions records) — unknown roles are skipped.
+    if let Some(roles) = value.get("roles").and_then(|v| v.as_array()) {
+        for role in roles {
+            let Some(role_name) = role.as_str() else { continue };
+            if let Ok(Some(role_row)) =
+                xamverse_storage::repos::UsersRepo::find_role_by_name(conn, &row.school_id, role_name)
+            {
+                xamverse_storage::repos::UsersRepo::grant_role(
+                    conn,
+                    &row.school_id,
+                    user_id,
+                    &role_row.role_id,
+                    Some(&row.author_device_id),
+                )?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn applied(op: &SyncOpWire) -> OpReceipt {

@@ -213,6 +213,10 @@ async fn test_c_ten_submissions_collect_idempotently_and_conflict_detected() {
     }
     assert_eq!(count_objects(&node_a, "exam_attempt"), 10);
 
+    // B collects all 10 from A over real TCP.
+    let summary = pull_now(&node_b, &node_a, addr_a, "school-1").await;
+    assert_eq!(summary.applied, 10, "all 10 submissions must arrive");
+
     // B collects from A.
     node_b
         .sync
@@ -241,6 +245,8 @@ async fn test_c_ten_submissions_collect_idempotently_and_conflict_detected() {
     assert_eq!(receipts, 10);
 
     // Repeat collection: still exactly 10 (deduplicated), receipts stable.
+    let again = pull_now(&node_b, &node_a, addr_a, "school-1").await;
+    assert_eq!(again.applied, 0, "second collection applies nothing");
     let again = pull_now(&node_b, &node_a, addr_a, "school-1").await;
     assert_eq!(again.applied, 0, "second collection applies nothing");
     assert_eq!(count_objects(&node_b, "exam_attempt"), 10);
@@ -348,7 +354,43 @@ async fn test_d_administrator_portability_and_rbac_denial() {
         })
         .expect("seed users");
 
-    // B pulls identity records (restricted category: requires trust — paired).
+    // Publish the identities as signed ops (the production enrollment flow:
+    // direct repo writes are local-only; replication goes through ops).
+    for username in ["admin-dana", "stu-sam"] {
+        let user = {
+            let conn = node_a.db.lock();
+            xamverse_storage::repos::UsersRepo::get_by_username(&conn, "school-1", username)
+                .expect("seeded user")
+                .expect("user exists")
+        };
+        let payload = serde_json::json!({
+            "user_id": user.user_id,
+            "username": user.username,
+            "display_name": user.display_name,
+            "status": user.status,
+            "auth_hash": user.auth_hash,
+            "roles": if username == "admin-dana" { ["admin"] } else { ["student"] },
+        })
+        .to_string();
+        node_a
+            .sync
+            .local
+            .create(
+                "school-1",
+                "staff_records",
+                &user.user_id,
+                Some(&payload),
+                None,
+                false,
+                &[],
+                None,
+            )
+            .expect("identity op");
+    }
+
+    // B pulls identity records over TCP (restricted category: requires trust).
+    let summary = pull_now(&node_b, &node_a, addr_a, "school-1").await;
+    assert!(summary.applied >= 2, "admin + student identities must arrive");
     node_b
         .sync
         .record_peer_address(&node_a.identity.device_id, addr_a);
@@ -356,17 +398,6 @@ async fn test_d_administrator_portability_and_rbac_denial() {
         .sync
         .enqueue_job("school-1", &node_a.identity.device_id, xamverse_storage::repos::JobKind::Pull, None)
         .expect("pull identities");
-    wait_for(
-        || {
-            let conn = node_b.db.lock();
-            xamverse_storage::repos::UsersRepo::get_by_username(&conn, "school-1", "admin-dana")
-                .map(|u| u.is_some())
-                .unwrap_or(false)
-        },
-        "B to receive the administrator identity",
-    
-    )
-    .await;
 
     // The admin can now authenticate on B — distributed identity works.
     let (_token, ctx_admin) = node_b
