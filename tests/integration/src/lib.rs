@@ -67,6 +67,32 @@ async fn pair(a: &Engine, b_addr: std::net::SocketAddr, b: &Engine) {
     // it through a pull, which records the address on connect.
 }
 
+
+/// Drive one real pull from `from` into `into` over TCP (the same
+/// `pull_from` path the durable job runner uses; the scheduler's timing is
+/// unit-tested separately, keeping these tests deterministic).
+async fn pull_now(into: &Arc<Engine>, from: &Engine, from_addr: std::net::SocketAddr, school_id: &str) -> xamverse_sync::PullSummary {
+    into.sync
+        .record_peer_address(&from.identity.device_id, from_addr);
+    let school_id = school_id.to_string();
+    into.sync
+        .with_peer_connection(&from.identity.device_id, Some(from_addr), |mut conn| {
+            let engine = into.clone();
+            let school_id = school_id.clone();
+            Box::pin(async move {
+                let summary = engine
+                    .sync
+                    .pull_from(&mut conn, &school_id, &[])
+                    .await
+                    .expect("pull over TCP");
+                conn.channel.goodbye().await;
+                Ok(summary)
+            })
+        })
+        .await
+        .expect("connection")
+}
+
 fn count_objects(engine: &Engine, category: &str) -> i64 {
     let conn = engine.db.lock();
     conn.query_row(
@@ -133,17 +159,15 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
     .await;
 
     // The op signature verified end-to-end: B holds A's op with A as author.
-    let conn = node_b.db.lock();
-    let total_ops: i64 = conn.query_row("SELECT COUNT(*) FROM sync_ops", [], |r| r.get(0)).unwrap_or(-1);
-    println!("[diag] B total ops={total_ops}");
-    let author: String = conn
-        .query_row(
+    let author: String = {
+        let conn = node_b.db.lock();
+        conn.query_row(
             "SELECT author_device_id FROM sync_ops WHERE school_id = 'school-1' AND object_id = 'config-1'",
             [],
             |r| r.get(0),
         )
-        .expect("replicated op present");
-    drop(conn);
+        .expect("replicated op present")
+    };
     assert_eq!(author, node_a.identity.device_id);
 
     // Duplicate delivery is idempotent (lost-ack retry safety).
@@ -217,11 +241,8 @@ async fn test_c_ten_submissions_collect_idempotently_and_conflict_detected() {
     assert_eq!(receipts, 10);
 
     // Repeat collection: still exactly 10 (deduplicated), receipts stable.
-    node_b
-        .sync
-        .enqueue_job("school-1", &node_a.identity.device_id, xamverse_storage::repos::JobKind::Collect, None)
-        .expect("second collect");
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let again = pull_now(&node_b, &node_a, addr_a, "school-1").await;
+    assert_eq!(again.applied, 0, "second collection applies nothing");
     assert_eq!(count_objects(&node_b, "exam_attempt"), 10);
     let receipts_after: i64 = {
         let conn = node_b.db.lock();
