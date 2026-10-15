@@ -54,7 +54,7 @@ interface ExamSessionState {
   timeScale: number; // demo time acceleration
 }
 
-interface DemoStore {
+export interface DemoStore {
   // ----- core state -----
   world: DemoWorld;
   activeDeviceId: string;
