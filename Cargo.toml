@@ -15,6 +15,7 @@ members = [
     "crates/xamverse-web",
     "crates/xamverse-core",
     "tools/peer-cli",
+    "tools/license-issuer-dev",
 ]
 # The Tauri desktop shell is an independent cargo package (it needs GUI system
 # libraries that headless CI/test machines do not have). It is built and
