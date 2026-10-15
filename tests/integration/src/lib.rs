@@ -108,6 +108,17 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
         .expect("enqueue pull");
     node_b.sync.record_peer_address(&node_a.identity.device_id, addr_book_a);
 
+    {
+        let conn = node_b.db.lock();
+        let rows: Vec<(String, String, i64)> = conn
+            .prepare("SELECT category, object_id, current_revision FROM sync_objects")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap_or_default();
+        println!("[diag-pre] B objects before pull: {rows:?}");
+    }
     wait_for(
         || {
             let c = count_objects(&node_b, "school_settings");
@@ -117,7 +128,9 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
             c == 1
         },
         "B to receive A's record",
-    );
+    
+    )
+    .await;
 
     // The op signature verified end-to-end: B holds A's op with A as author.
     let conn = node_b.db.lock();
@@ -144,7 +157,9 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
             count_objects(&node_b, "school_settings") == 1
         },
         "idempotent re-pull",
-    );
+    
+    )
+    .await;
 
     node_a.stop().await;
     node_b.stop().await;
@@ -185,7 +200,9 @@ async fn test_c_ten_submissions_collect_idempotently_and_conflict_detected() {
     wait_for(
         || count_objects(&node_b, "exam_attempt") == 10,
         "B to collect all 10 submissions",
-    );
+    
+    )
+    .await;
 
     // Receipts recorded by the collector — one per attempt.
     let receipts: i64 = {
@@ -326,7 +343,9 @@ async fn test_d_administrator_portability_and_rbac_denial() {
                 .unwrap_or(false)
         },
         "B to receive the administrator identity",
-    );
+    
+    )
+    .await;
 
     // The admin can now authenticate on B — distributed identity works.
     let (_token, ctx_admin) = node_b
