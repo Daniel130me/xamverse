@@ -1,6 +1,6 @@
 [package]
 name = "xamverse-updater"
-description = "XamVerse engine component (implementation in progress)"
+description = "Signed update verification, offline import and LAN distribution for the XamVerse engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,24 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+xamverse-storage = { workspace = true }
+xamverse-events = { workspace = true }
+xamverse-identity = { workspace = true }
+xamverse-audit = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+semver = "1"
+data-encoding = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
 
 [lints]
 workspace = true
