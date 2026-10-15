@@ -7,8 +7,8 @@
  */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
-import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, TransferProgress, AccessDenied } from '../shared/ui-kit';
-import { fmtRelative, fmtDateTime, TRANSFER_STATUS_LABELS } from '@/lib/prototype/ui-utils';
+import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, TransferProgress, AccessDenied } from '@/components/shared/ui-kit';
+import { fmtRelative, fmtDateTime, TRANSFER_STATUS_LABELS } from '@/lib/ui-utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';

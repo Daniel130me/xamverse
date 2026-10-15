@@ -6,8 +6,8 @@
  */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
-import { PageHeader, StatCard, SectionCard, StatusBadge, EmptyState, UserAvatar, AccessDenied } from '../shared/ui-kit';
-import { ASSESSMENT_STATUS_LABELS, fmtDate, fmtRelative, gradeBand } from '@/lib/prototype/ui-utils';
+import { PageHeader, StatCard, SectionCard, StatusBadge, EmptyState, UserAvatar, AccessDenied } from '@/components/shared/ui-kit';
+import { ASSESSMENT_STATUS_LABELS, fmtDate, fmtRelative, gradeBand } from '@/lib/ui-utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';

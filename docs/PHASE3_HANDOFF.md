@@ -4,7 +4,7 @@ Handoff for the application development agent (Phase 3). Phase 1 delivered a com
 
 ## 1. What exists and must be preserved
 - **All screens & navigation** (`src/components/prototype/screens/*`, `src/components/prototype/shell/*`) — layouts, states, copy and interaction patterns are the agreed UX reference.
-- **Design system** (`docs/DESIGN_SYSTEM.md`, `src/components/prototype/shared/ui-kit.tsx`) — tokens, components, patterns.
+- **Design system** (`docs/DESIGN_SYSTEM.md`, `src/components/shared/ui-kit.tsx` — production-safe, reusable as-is) — tokens, components, patterns.
 - **Type definitions** (`src/lib/prototype/types.ts`) — conceptual models for all entities.
 - **Service boundaries** (`src/lib/prototype/store.ts` action signatures ≈ `docs/INTEGRATION_CONTRACTS.md`).
 - **Seed scenarios** (`src/lib/prototype/seed/*`) — as fixtures for tests and demos.

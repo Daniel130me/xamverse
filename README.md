@@ -20,16 +20,19 @@ The entire app is a client-side SPA exposed on `/` with an internal hash router 
 ```
 src/
   app/page.tsx                       # SPA entry + internal router
-  lib/prototype/
-    types.ts                         # conceptual data models (see docs/DATA_MODELS.md)
-    world.ts                         # DemoWorld/DeviceLocalState model
-    store.ts                         # Zustand store = mock service layer + sync engine
-    ui-utils.tsx                     # statuses, formatting, tone mapping
-    seed/                            # deterministic demo world (2 schools, 103 devices…)
-  components/prototype/
-    shared/ui-kit.tsx                # DataTable, StatCard, StatusBadge, PageHeader…
-    shell/AppShell.tsx               # sidebar, header, Device Simulator bar
-    screens/*.tsx                    # every module's screens (see docs/SCREEN_INVENTORY.md)
+  lib/
+    ui-utils.tsx                     # statuses, formatting, tone mapping (production-safe)
+    prototype/
+      types.ts                        # conceptual data models (see docs/DATA_MODELS.md)
+      world.ts                        # DemoWorld/DeviceLocalState model
+      service-contracts.ts            # compiler-checked service interfaces (see docs/INTEGRATION_CONTRACTS.md)
+      store.ts                        # Zustand store = mock service layer + sync engine
+      seed/                           # deterministic demo world (2 schools, 103 devices…)
+  components/
+    shared/ui-kit.tsx                 # DataTable, StatCard, StatusBadge, PageHeader… (production-safe)
+    prototype/
+      shell/AppShell.tsx              # sidebar, header, Device Simulator bar
+      screens/*.tsx                   # every module's screens (see docs/SCREEN_INVENTORY.md)
 docs/                                # the 10 handoff documents
 ```
 

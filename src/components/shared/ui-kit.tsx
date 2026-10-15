@@ -13,7 +13,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Inbox, ShieldAlert, ArrowUpDown, Loader2,
 } from 'lucide-react';
-import { avatarStyle, initials } from '@/lib/prototype/ui-utils';
+import { avatarStyle, initials } from '@/lib/ui-utils';
 
 // ------------------------------------------------------------
 // PageHeader with breadcrumbs
@@ -405,4 +405,4 @@ export function TransferProgress({ progress, speedMbps, status }: { progress: nu
   );
 }
 
-export { StatusBadge } from '@/lib/prototype/ui-utils';
+export { StatusBadge } from '@/lib/ui-utils';

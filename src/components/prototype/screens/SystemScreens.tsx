@@ -3,8 +3,8 @@
 /** System screens — notifications, licensing, updates, backups, audit, settings, help, browser access */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
-import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, TransferProgress } from '../shared/ui-kit';
-import { fmtDateTime, fmtRelative, ROLE_LABELS } from '@/lib/prototype/ui-utils';
+import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, TransferProgress } from '@/components/shared/ui-kit';
+import { fmtDateTime, fmtRelative, ROLE_LABELS } from '@/lib/ui-utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';

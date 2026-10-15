@@ -8,7 +8,7 @@
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
 import { QuestionRenderer } from './ExamRunner';
-import { fmtSec } from '@/lib/prototype/ui-utils';
+import { fmtSec } from '@/lib/ui-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

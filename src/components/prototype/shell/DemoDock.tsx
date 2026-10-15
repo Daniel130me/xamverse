@@ -11,8 +11,8 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { useDemoStore } from '@/lib/prototype/store';
-import { ROLE_LABELS } from '@/lib/prototype/ui-utils';
-import { UserAvatar } from '../shared/ui-kit';
+import { ROLE_LABELS } from '@/lib/ui-utils';
+import { UserAvatar } from '@/components/shared/ui-kit';
 import { Button } from '@/components/ui/button';
 import {
   FlaskConical, X, UserRound, MonitorSmartphone, Wifi, WifiOff, CircleDot,

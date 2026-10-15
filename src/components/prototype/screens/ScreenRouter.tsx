@@ -6,8 +6,8 @@
  */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
-import { AccessDenied, EmptyState } from '../shared/ui-kit';
-import { ROLE_LABELS } from '@/lib/prototype/ui-utils';
+import { AccessDenied, EmptyState } from '@/components/shared/ui-kit';
+import { ROLE_LABELS } from '@/lib/ui-utils';
 import { Button } from '@/components/ui/button';
 import type { PermissionKey } from '@/lib/prototype/types';
 

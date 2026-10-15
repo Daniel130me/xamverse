@@ -8,7 +8,7 @@
  */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
-import { QUESTION_TYPE_LABELS, fmtSec } from '@/lib/prototype/ui-utils';
+import { QUESTION_TYPE_LABELS, fmtSec } from '@/lib/ui-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';

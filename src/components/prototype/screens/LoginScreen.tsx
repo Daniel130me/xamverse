@@ -3,8 +3,8 @@
 /** Login — the product's entry page. Realistic form + optional demo-account disclosure. */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
-import { ROLE_LABELS, fmtRelative } from '@/lib/prototype/ui-utils';
-import { UserAvatar } from '../shared/ui-kit';
+import { ROLE_LABELS, fmtRelative } from '@/lib/ui-utils';
+import { UserAvatar } from '@/components/shared/ui-kit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

@@ -3,8 +3,8 @@
 /** Users & permissions — accounts, sessions, roles matrix, custom roles, my profile */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
-import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, UserAvatar } from '../shared/ui-kit';
-import { ROLE_LABELS, fmtDateTime, fmtRelative } from '@/lib/prototype/ui-utils';
+import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, UserAvatar } from '@/components/shared/ui-kit';
+import { ROLE_LABELS, fmtDateTime, fmtRelative } from '@/lib/ui-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

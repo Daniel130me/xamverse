@@ -8,8 +8,8 @@
  */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
-import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, AccessDenied } from '../shared/ui-kit';
-import { ASSESSMENT_STATUS_LABELS, QUESTION_TYPE_LABELS, fmtDateTime, fmtDate, fmtRelative } from '@/lib/prototype/ui-utils';
+import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, AccessDenied } from '@/components/shared/ui-kit';
+import { ASSESSMENT_STATUS_LABELS, QUESTION_TYPE_LABELS, fmtDateTime, fmtDate, fmtRelative } from '@/lib/ui-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

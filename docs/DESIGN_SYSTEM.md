@@ -57,7 +57,7 @@ Charts use the palette: `#0d9488` (primary data), `#f59e0b`, `#8b5cf6`, `#ef4444
 ## 6. Components (shadcn/ui, New York style)
 button, badge, card, input, textarea, label, checkbox, radio-group, select, switch, tabs, table, dialog, dropdown-menu, separator, progress, scroll-area, avatar, tooltip, sonner toaster (bottom-right, rich colours).
 
-Custom shared primitives live in `src/components/prototype/shared/ui-kit.tsx`: `PageHeader`, `StatCard`, `SectionCard`, `DataTable`, `StatusBadge`, `UserAvatar`, `EmptyState`, `AccessDenied`, `Loading`, `TransferProgress`.
+Custom shared primitives live in `src/components/shared/ui-kit.tsx` (production-safe — no simulation imports): `PageHeader`, `StatCard`, `SectionCard`, `DataTable`, `StatusBadge`, `UserAvatar`, `EmptyState`, `AccessDenied`, `Loading`, `TransferProgress`.
 
 ## 7. Interaction rules
 - Destructive or irreversible actions (release results, revoke pairing, reset demo, submit exam) require a confirmation dialog that restates the effect.

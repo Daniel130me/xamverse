@@ -3,8 +3,8 @@
 /** Question banks — overview tabs, full editor (9 types), AI assistant */
 import * as React from 'react';
 import { useDemoStore } from '@/lib/prototype/store';
-import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, UserAvatar, AccessDenied } from '../shared/ui-kit';
-import { QUESTION_TYPE_LABELS, fmtDate, fmtRelative } from '@/lib/prototype/ui-utils';
+import { PageHeader, StatCard, SectionCard, StatusBadge, DataTable, EmptyState, UserAvatar, AccessDenied } from '@/components/shared/ui-kit';
+import { QUESTION_TYPE_LABELS, fmtDate, fmtRelative } from '@/lib/ui-utils';
 import { QuestionRenderer } from './ExamRunner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

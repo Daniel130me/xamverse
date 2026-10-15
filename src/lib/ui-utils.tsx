@@ -1,5 +1,5 @@
-/** Shared formatting + status utilities for the prototype */
-import type { AssessmentStatus, QuestionStatus, QuestionType, Role, TransferStatus, ConflictStatus } from './types';
+/** Shared formatting + status utilities reusable across prototype and production */
+import type { AssessmentStatus, QuestionStatus, QuestionType, Role, TransferStatus, ConflictStatus } from '@/lib/prototype/types';
 
 export const ROLE_LABELS: Record<Role, string> = {
   proprietor: 'Proprietor',
