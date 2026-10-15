@@ -115,6 +115,8 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
 
     // The op signature verified end-to-end: B holds A's op with A as author.
     let conn = node_b.db.lock();
+    let total_ops: i64 = conn.query_row("SELECT COUNT(*) FROM sync_ops", [], |r| r.get(0)).unwrap_or(-1);
+    println!("[diag] B total ops={total_ops}");
     let author: String = conn
         .query_row(
             "SELECT author_device_id FROM sync_ops WHERE school_id = 'school-1' AND object_id = 'config-1'",
