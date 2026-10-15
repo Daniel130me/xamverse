@@ -1,6 +1,6 @@
 [package]
 name = "xamverse-security"
-description = "XamVerse engine component (implementation in progress)"
+description = "Offline authentication (Argon2id), session management, RBAC enforcement and login throttling for the XamVerse engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,21 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+xamverse-storage = { workspace = true }
+xamverse-audit = { workspace = true }
+argon2 = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+rusqlite = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

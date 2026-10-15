@@ -25,7 +25,7 @@ pub use identity::{DeviceRow, DevicesRepo, TrustRepo, TrustState};
 pub use licence::LicencesRepo;
 pub use session::{LoginAttemptsRepo, SessionRow, SessionsRepo};
 pub use sync::{BlobRepo, CheckpointsRepo, JobKind, JobStatus, JobsRepo, ObjectRow, ObjectsRepo, OpsRepo};
-pub use users::UsersRepo;
+pub use users::{RoleRow, UserRow, UsersRepo};
 
 use crate::error::StorageError;
 use crate::StorageResult;
