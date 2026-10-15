@@ -8,7 +8,7 @@ pub mod auth;
 pub mod permissions;
 pub mod rbac;
 
-pub use auth::{AuthConfig, AuthError, AuthService, SessionContext, SessionKind};
+pub use auth::{hash_password, hash_token, AuthConfig, AuthError, AuthService, SessionContext, SessionKind};
 pub use permissions::{builtin_role_permissions, builtin_roles, reserved};
 pub use rbac::{require_with_conn, Authz};
 

@@ -12,7 +12,7 @@ pub mod secure;
 
 pub use framing::{Envelope, FrameError};
 pub use peer::{
-    PeerClient, PeerConnection, PeerHandler, PeerServer, TrustDecision, TrustPolicy,
+    HandlerFuture, PeerClient, PeerServerError, PeerConnection, PeerHandler, PeerServer, TrustDecision, TrustPolicy,
 };
 pub use secure::{AuthenticatedPeer, ChannelError, HandshakeRole, SecureChannel};
 

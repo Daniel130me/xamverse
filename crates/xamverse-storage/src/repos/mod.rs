@@ -18,14 +18,14 @@ mod session;
 mod sync;
 mod users;
 
-pub use backup::{BackupsRepo, BackgroundJobRow, BackgroundJobsRepo, UpdateHistoryRepo, UpdateStateRow};
+pub use backup::{BackupRow, BackupsRepo, BackgroundJobRow, BackgroundJobsRepo, UpdateHistoryRepo, UpdateStateRow};
 pub use conflict::{ConflictRow, ConflictsRepo, ConflictStatus, ConflictStrategy};
 pub use exams::{
     AttemptEventRow, AttemptRow, AttemptsRepo, CollectionReceiptRow, CollectionReceiptsRepo,
     PackageRow, PackagesRepo,
 };
 pub use identity::{DeviceRow, DevicesRepo, TrustRepo, TrustState};
-pub use licence::LicencesRepo;
+pub use licence::{LicenceRow, LicencesRepo};
 pub use session::{LoginAttemptsRepo, SessionRow, SessionsRepo};
 pub use sync::{
     BlobRepo, CheckpointsRepo, JobKind, JobRow, JobStatus, JobsRepo, ObjectRow, ObjectSummary,
