@@ -63,7 +63,7 @@ impl SigningKeyPair {
     }
 
     pub fn sign(&self, message: &[u8]) -> String {
-        use ed25519_dalek::Signature;
+        
         data_encoding::BASE64.encode(&self.signing.sign(message).to_bytes())
     }
 
