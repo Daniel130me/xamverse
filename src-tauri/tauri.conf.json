@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.xamverse.desktop",
   "build": {
-    "beforeBuildCommand": "npm --prefix .. run desktop:prepare",
-    "beforeDevCommand": "npm --prefix .. run dev",
+    "beforeBuildCommand": "npm run desktop:prepare",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3000",
     "frontendDist": "frontend-dist"
   },
