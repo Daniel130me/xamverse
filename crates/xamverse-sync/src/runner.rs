@@ -8,15 +8,16 @@ use crate::messages::*;
 use crate::op::{OpOutcome, OpReceipt, SyncOpWire};
 use crate::SyncError;
 use std::collections::HashMap;
-use xamverse_storage::StorageResult;
 use std::sync::Arc;
 use std::time::Duration;
-use xamverse_events::{EngineEvent, EventBus, EventKind};
+use xamverse_events::{EngineEvent, EventKind};
+use xamverse_network::framing::kinds as envelope_kinds;
 use xamverse_network::{Envelope, PeerConnection};
+use xamverse_storage::checksum;
 use xamverse_storage::repos::{
     BlobRepo, CheckpointsRepo, JobKind, JobRow, JobStatus, JobsRepo, ObjectsRepo, OpRow, OpsRepo,
 };
-use xamverse_storage::checksum;
+use xamverse_storage::StorageResult;
 
 use super::engine::SyncEngine;
 
@@ -53,7 +54,9 @@ impl SyncEngine {
                 JobsRepo::mark_status(&conn, &job.job_id, JobStatus::Running, None)?;
             }
             self.events
-                .publish(EngineEvent::new(EventKind::SyncStarted { job_id: job.job_id.clone() }));
+                .publish(EngineEvent::new(EventKind::SyncStarted {
+                    job_id: job.job_id.clone(),
+                }));
             match self.execute_job(&job).await {
                 Ok(()) => {
                     let conn = self.db.lock();
@@ -70,19 +73,23 @@ impl SyncEngine {
                             Some(&format!("{err} (retries exhausted)")),
                         )?;
                         drop(conn);
-                        self.events.publish(EngineEvent::new(EventKind::TransferFailed {
-                            job_id: job.job_id.clone(),
-                            error: err.to_string(),
-                        }));
+                        self.events
+                            .publish(EngineEvent::new(EventKind::TransferFailed {
+                                job_id: job.job_id.clone(),
+                                error: err.to_string(),
+                            }));
                     } else {
                         let delay = backoff(job.attempts + 1);
-                        let next_at = (chrono::Utc::now() + chrono::TimeDelta::from_std(delay).unwrap_or(chrono::TimeDelta::try_seconds(2).unwrap())).to_rfc3339();
+                        let delta =
+                            chrono::TimeDelta::from_std(delay).unwrap_or(chrono::TimeDelta::MAX);
+                        let next_at = (chrono::Utc::now() + delta).to_rfc3339();
                         JobsRepo::record_failure(&conn, &job.job_id, &err.to_string(), &next_at)?;
                         drop(conn);
-                        self.events.publish(EngineEvent::new(EventKind::TransferPaused {
-                            job_id: job.job_id.clone(),
-                            reason: format!("retry in {delay:?}: {err}"),
-                        }));
+                        self.events
+                            .publish(EngineEvent::new(EventKind::TransferPaused {
+                                job_id: job.job_id.clone(),
+                                reason: format!("retry in {delay:?}: {err}"),
+                            }));
                     }
                 }
             }
@@ -102,10 +109,12 @@ impl SyncEngine {
 
     async fn execute_push(self: &Arc<Self>, job: &JobRow) -> Result<(), SyncError> {
         let Some(op_id) = job.op_id.clone() else {
-            return Err(SyncError::Storage(xamverse_storage::StorageError::InvalidValue {
-                field: "push job",
-                reason: "missing op_id".into(),
-            }));
+            return Err(SyncError::Storage(
+                xamverse_storage::StorageError::InvalidValue {
+                    field: "push job",
+                    reason: "missing op_id".into(),
+                },
+            ));
         };
         let op_row = {
             let conn = self.db.lock();
@@ -152,10 +161,14 @@ impl SyncEngine {
         ops: &[SyncOpWire],
     ) -> Result<Vec<OpReceipt>, SyncError> {
         let mut receipts: Vec<OpReceipt> = self
-            .request_typed(conn, "ops_push", &OpsPush {
-                school_id: school_id.to_string(),
-                ops: ops.to_vec(),
-            })
+            .request_typed(
+                conn,
+                "ops_push",
+                &OpsPush {
+                    school_id: school_id.to_string(),
+                    ops: ops.to_vec(),
+                },
+            )
             .await?;
         let ops_by_id: HashMap<&str, &SyncOpWire> =
             ops.iter().map(|o| (o.op_id.as_str(), o)).collect();
@@ -183,10 +196,14 @@ impl SyncEngine {
                 self.stream_blob(conn, school_id, &blob_sha).await?;
             }
             receipts = self
-                .request_typed::<Vec<OpReceipt>>(conn, "ops_push", &OpsPush {
-                    school_id: school_id.to_string(),
-                    ops: ops.to_vec(),
-                })
+                .request_typed::<Vec<OpReceipt>>(
+                    conn,
+                    "ops_push",
+                    &OpsPush {
+                        school_id: school_id.to_string(),
+                        ops: ops.to_vec(),
+                    },
+                )
                 .await?;
         }
         Ok(receipts)
@@ -216,7 +233,13 @@ impl SyncEngine {
         }
 
         let status: BlobStatusReply = self
-            .request_typed(conn, "blob_status", &BlobStatus { sha256: sha256.to_string() })
+            .request_typed(
+                conn,
+                "blob_status",
+                &BlobStatus {
+                    sha256: sha256.to_string(),
+                },
+            )
             .await?;
         let mut offset = status.stored_bytes;
         if offset > total {
@@ -233,14 +256,14 @@ impl SyncEngine {
                 sha256: sha256.to_string(),
                 offset,
                 total_size: total,
-                data_b64: data_encoding_b64(&local_data[offset as usize..(offset + length) as usize]),
+                data_b64: data_encoding_b64(
+                    &local_data[offset as usize..(offset + length) as usize],
+                ),
                 eof: offset + length >= total,
             };
             // Receiver appends at exactly `offset` and replies with its new
             // stored length — the durable checkpoint for resumption.
-            let ack: BlobStatusReply = self
-                .request_typed(conn, "blob_put", &chunk)
-                .await?;
+            let ack: BlobStatusReply = self.request_typed(conn, "blob_put", &chunk).await?;
             offset = ack.stored_bytes;
             if offset >= next_progress || offset >= total {
                 self.events.publish(
@@ -269,7 +292,10 @@ impl SyncEngine {
     /// lack, apply them, and advance checkpoints per category.
     pub async fn execute_pull(self: &Arc<Self>, job: &JobRow) -> Result<(), SyncError> {
         let categories: Vec<String> = if job.kind == JobKind::Collect {
-            crate::category::RESULT_CATEGORIES.iter().map(|s| s.to_string()).collect()
+            crate::category::RESULT_CATEGORIES
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
         } else {
             Vec::new() // all categories
         };
@@ -312,18 +338,27 @@ impl SyncEngine {
                     max = CheckpointsRepo::get(&c, school_id, &conn.peer.card.device_id, "*")?;
                 } else {
                     for cat in categories {
-                        max = max.max(CheckpointsRepo::get(&c, school_id, &conn.peer.card.device_id, cat)?);
+                        max = max.max(CheckpointsRepo::get(
+                            &c,
+                            school_id,
+                            &conn.peer.card.device_id,
+                            cat,
+                        )?);
                     }
                 }
                 max
             };
             let manifest: Manifest = self
-                .request_typed(conn, "manifest_request", &ManifestRequest {
-                    school_id: school_id.to_string(),
-                    categories: categories.to_vec(),
-                    since_lamport: checkpoint,
-                    limit: super::engine::MANIFEST_PAGE,
-                })
+                .request_typed(
+                    conn,
+                    "manifest_request",
+                    &ManifestRequest {
+                        school_id: school_id.to_string(),
+                        categories: categories.to_vec(),
+                        since_lamport: checkpoint,
+                        limit: super::engine::MANIFEST_PAGE,
+                    },
+                )
                 .await?;
             if manifest.summaries.is_empty() {
                 break;
@@ -347,10 +382,14 @@ impl SyncEngine {
             };
             if !want.is_empty() {
                 let ops_reply: OpsReply = self
-                    .request_typed(conn, "ops_get", &OpsGet {
-                        school_id: school_id.to_string(),
-                        op_ids: want,
-                    })
+                    .request_typed(
+                        conn,
+                        "ops_get",
+                        &OpsGet {
+                            school_id: school_id.to_string(),
+                            op_ids: want,
+                        },
+                    )
                     .await?;
                 // Any blob-backed ops must be streamed before applying.
                 for op in &ops_reply.ops {
@@ -391,16 +430,30 @@ impl SyncEngine {
             {
                 let c = self.db.lock();
                 if categories.is_empty() {
-                    CheckpointsRepo::set(&c, school_id, &conn.peer.card.device_id, "*", manifest.max_lamport)?;
+                    CheckpointsRepo::set(
+                        &c,
+                        school_id,
+                        &conn.peer.card.device_id,
+                        "*",
+                        manifest.max_lamport,
+                    )?;
                 } else {
                     for cat in categories {
-                        CheckpointsRepo::set(&c, school_id, &conn.peer.card.device_id, cat, manifest.max_lamport)?;
+                        CheckpointsRepo::set(
+                            &c,
+                            school_id,
+                            &conn.peer.card.device_id,
+                            cat,
+                            manifest.max_lamport,
+                        )?;
                     }
                 }
             }
 
             pages += 1;
-            if manifest.truncated || manifest.summaries.len() == super::engine::MANIFEST_PAGE as usize {
+            if manifest.truncated
+                || manifest.summaries.len() == super::engine::MANIFEST_PAGE as usize
+            {
                 if pages > 1000 {
                     return Err(SyncError::PeerError {
                         code: "manifest_loop".into(),
@@ -467,7 +520,7 @@ impl SyncEngine {
         let envelope = conn
             .request(Envelope::new(kind, serde_json::to_value(payload)?))
             .await?;
-        if envelope.kind == "error" {
+        if envelope.kind == envelope_kinds::ERROR {
             let err: ErrorPayload = serde_json::from_value(envelope.payload.clone())?;
             return Err(SyncError::PeerError {
                 code: err.code,
@@ -477,7 +530,13 @@ impl SyncEngine {
         Ok(serde_json::from_value(envelope.payload)?)
     }
 
-    pub fn enqueue_job(&self, school_id: &str, target: &str, kind: JobKind, op_id: Option<String>) -> StorageResult<String> {
+    pub fn enqueue_job(
+        &self,
+        school_id: &str,
+        target: &str,
+        kind: JobKind,
+        op_id: Option<String>,
+    ) -> StorageResult<String> {
         let job_id = uuid::Uuid::now_v7().to_string();
         let now = xamverse_storage::now_rfc3339();
         let conn = self.db.lock();
@@ -497,9 +556,10 @@ impl SyncEngine {
                 updated_at: now,
             },
         )?;
-        self.events.publish(EngineEvent::new(EventKind::SyncRequested {
-            job_id: job_id.clone(),
-        }));
+        self.events
+            .publish(EngineEvent::new(EventKind::SyncRequested {
+                job_id: job_id.clone(),
+            }));
         Ok(job_id)
     }
 }
@@ -544,7 +604,10 @@ fn data_encoding_b64(data: &[u8]) -> String {
 
 /// Exponential backoff with jitter: base * 2^attempt, capped, ±25% jitter.
 pub fn backoff(attempt: i64) -> Duration {
-    let exp = super::engine::RETRY_BASE.as_millis() as u64 * 1u64 << attempt.min(16) as u32;
+    // Explicit shift bound + parens: `as` and `<<` precedence together are
+    // unreadable, and a negative attempt would panic the shift.
+    let shift = attempt.clamp(0, 16) as u32;
+    let exp = super::engine::RETRY_BASE.as_millis() as u64 * (1u64 << shift);
     let capped = exp.min(super::engine::RETRY_CAP.as_millis() as u64);
     let jitter = (capped / 4) as i64;
     let offset = rand_offset(-jitter, jitter);
@@ -558,4 +621,3 @@ fn rand_offset(min: i64, max: i64) -> i64 {
     }
     rand::thread_rng().gen_range(min..=max)
 }
-

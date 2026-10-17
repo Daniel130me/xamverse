@@ -4,24 +4,18 @@
 //! peer may push to us, and we may pull or push to any peer. Transfer
 //! success is always defined by *applied receipts*, never bytes sent.
 
-use crate::apply::{ApplyPipeline, SenderContext};
-use crate::SyncError;
+use crate::apply::ApplyPipeline;
 use crate::local::LocalOps;
 use crate::messages::*;
-use crate::op::{OpOutcome, OpReceipt, SyncOpWire};
+use crate::SyncError;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use xamverse_events::{EngineEvent, EventBus, EventKind};
 use xamverse_identity::DeviceIdentity;
-use xamverse_network::{
-    Envelope, PeerClient, PeerConnection, PeerHandler, TrustDecision, TrustPolicy,
-};
-use xamverse_storage::repos::{
-    BlobRepo, CheckpointsRepo, DevicesRepo, JobKind, JobStatus, JobsRepo, ObjectSummary,
-    ObjectsRepo, OpRow, OpsRepo, TrustRepo, TrustState,
-};
-use xamverse_storage::{checksum, now_rfc3339, Database, StorageError, StorageResult};
+use xamverse_network::{PeerClient, PeerConnection, TrustDecision, TrustPolicy};
+use xamverse_storage::repos::{DevicesRepo, TrustRepo, TrustState};
+use xamverse_storage::{now_rfc3339, Database, StorageResult};
 
 /// How often the job runner scans the durable outbox.
 pub(crate) const JOB_POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -48,13 +42,13 @@ pub struct SyncEngine {
 }
 
 impl SyncEngine {
-    pub fn new(db: Arc<Database>, identity: Arc<DeviceIdentity>, events: Arc<EventBus>) -> Arc<Self> {
+    pub fn new(
+        db: Arc<Database>,
+        identity: Arc<DeviceIdentity>,
+        events: Arc<EventBus>,
+    ) -> Arc<Self> {
         let local = Arc::new(LocalOps::new(db.clone(), identity.clone(), events.clone()));
-        let apply = Arc::new(ApplyPipeline::new(
-            db.clone(),
-            identity.device_id.clone(),
-            events.clone(),
-        ));
+        let apply = Arc::new(ApplyPipeline::new(db.clone(), events.clone()));
         Arc::new(Self {
             db,
             identity,
@@ -78,7 +72,9 @@ impl SyncEngine {
             // access — per-school authorization still applies per op.
             let schools = xamverse_storage::repos::SchoolsRepo::list(&conn).unwrap_or_default();
             for school in schools {
-                if let Ok(Some(trust)) = TrustRepo::get(&conn, &school.school_id, &peer.card.device_id) {
+                if let Ok(Some(trust)) =
+                    TrustRepo::get(&conn, &school.school_id, &peer.card.device_id)
+                {
                     match trust.state {
                         TrustState::Trusted => return TrustDecision::Allow,
                         TrustState::Pending => return TrustDecision::AllowLimited,
@@ -132,16 +128,27 @@ impl SyncEngine {
             requester_name: self.identity.name.clone(),
             requester_fingerprint: self.identity.fingerprint(),
         };
-        let reply = conn
-            .request(Envelope::new("pair_request", serde_json::to_value(&request)?))
+        // request_typed (not a raw conn.request) so a structured error reply
+        // from the responder surfaces as SyncError::PeerError instead of a
+        // misleading JSON "missing field" parse failure.
+        let pending: PairPending = self
+            .request_typed(&mut conn, "pair_request", &request)
             .await?;
-        let pending: PairPending = serde_json::from_value(reply.payload)?;
         // Remember the responder as pending on our side too.
         self.register_remote_device(&conn.peer.card)?;
         let db = self.db.clone();
         let device_id = pending.responder_device_id.clone();
         let school = school_id.to_string();
-        db.tx(|c| TrustRepo::set(c, &school, &device_id, TrustState::Pending, None, Some("pair requested")))?;
+        db.tx(|c| {
+            TrustRepo::set(
+                c,
+                &school,
+                &device_id,
+                TrustState::Pending,
+                None,
+                Some("pair requested"),
+            )
+        })?;
         self.events.publish(
             EngineEvent::new(EventKind::DevicePaired {
                 device_id: conn.peer.card.device_id.clone(),
@@ -154,9 +161,21 @@ impl SyncEngine {
     }
 
     /// Approve a pending pairing (engine-enforced; UI only calls this).
-    pub fn approve_pairing(&self, school_id: &str, device_id: &str, approved_by: &str) -> StorageResult<()> {
+    pub fn approve_pairing(
+        &self,
+        school_id: &str,
+        device_id: &str,
+        approved_by: &str,
+    ) -> StorageResult<()> {
         self.db.tx(|conn| {
-            TrustRepo::set(conn, school_id, device_id, TrustState::Trusted, Some(approved_by), None)?;
+            TrustRepo::set(
+                conn,
+                school_id,
+                device_id,
+                TrustState::Trusted,
+                Some(approved_by),
+                None,
+            )?;
             xamverse_audit::record(
                 conn,
                 &xamverse_audit::AuditEvent::new("devices.paired")
@@ -179,9 +198,22 @@ impl SyncEngine {
 
     /// Revoke trust; the device loses restricted and sync access everywhere
     /// this decision has replicated to.
-    pub fn revoke_device(&self, school_id: &str, device_id: &str, revoked_by: &str, reason: &str) -> StorageResult<()> {
+    pub fn revoke_device(
+        &self,
+        school_id: &str,
+        device_id: &str,
+        revoked_by: &str,
+        reason: &str,
+    ) -> StorageResult<()> {
         self.db.tx(|conn| {
-            TrustRepo::set(conn, school_id, device_id, TrustState::Revoked, Some(revoked_by), Some(reason))?;
+            TrustRepo::set(
+                conn,
+                school_id,
+                device_id,
+                TrustState::Revoked,
+                Some(revoked_by),
+                Some(reason),
+            )?;
             xamverse_audit::record(
                 conn,
                 &xamverse_audit::AuditEvent::new("devices.revoked")
@@ -203,7 +235,10 @@ impl SyncEngine {
     }
 
     /// Store a remote device row from its verified card (idempotent).
-    pub fn register_remote_device(&self, card: &xamverse_identity::DeviceCard) -> StorageResult<()> {
+    pub fn register_remote_device(
+        &self,
+        card: &xamverse_identity::DeviceCard,
+    ) -> StorageResult<()> {
         let row = xamverse_storage::repos::DeviceRow {
             device_id: card.device_id.clone(),
             school_id: None,
@@ -213,7 +248,10 @@ impl SyncEngine {
             transport_pk: card.transport_pk.clone(),
             fingerprint: {
                 // Recompute so a forged card cannot poison the fingerprint.
-                xamverse_identity::DeviceIdentity::fingerprint_of(&card.signing_pk, &card.transport_pk)
+                xamverse_identity::DeviceIdentity::fingerprint_of(
+                    &card.signing_pk,
+                    &card.transport_pk,
+                )
             },
             is_local: false,
             last_seen_at: Some(now_rfc3339()),
@@ -241,14 +279,18 @@ impl SyncEngine {
         &self,
         device_id: &str,
         addr_override: Option<std::net::SocketAddr>,
-        f: impl FnOnce(PeerConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, SyncError>> + Send>>,
+        f: impl FnOnce(
+            PeerConnection,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<T, SyncError>> + Send>,
+        >,
     ) -> Result<T, SyncError> {
         let semaphore = self.semaphore_for(device_id);
         let permit = semaphore.acquire().await;
         let addr = addr_override
             .or_else(|| self.lookup_peer_address(device_id))
             .ok_or_else(|| SyncError::NoAddress(device_id.to_string()))?;
-        let mut conn = PeerClient::connect(addr, &self.identity, &self.trust_policy()).await?;
+        let conn = PeerClient::connect(addr, &self.identity, &self.trust_policy()).await?;
         self.record_peer_address(&conn.peer.card.device_id, addr);
         // Learn the remote's device row from its verified card.
         self.register_remote_device(&conn.peer.card)?;

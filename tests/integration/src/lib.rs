@@ -2,12 +2,23 @@
 //!
 //! Covers Phase 2 specification §27:
 //! * **Test A** — two autonomous peers: pair, sync, stop, restart, resume.
+//! * **Test B** — pairing trust is enforced: failures surface as structured
+//!   peer errors over the wire, never as malformed successes.
 //! * **Test C** — multiple submissions: 10 attempts collected, repeat
 //!   collection stays at 10, conflicting content is detected.
 //! * **Test D** — administrator portability + RBAC denial.
 //!
 //! Every peer is a full [`Engine`] with its own data directory, keystore,
 //! identity and listener — no shared in-memory state (spec §26).
+
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+// This crate is a library only so the workspace can share test helpers; its
+// real output is the test target. Under `cargo check` (non-test) the helpers
+// legitimately look unused and use test-style unwrap/expect — allow exactly
+// that for this crate, nothing else.
+#![cfg_attr(not(test), allow(dead_code, clippy::unwrap_used, clippy::expect_used))]
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -67,11 +78,15 @@ async fn pair(a: &Engine, b_addr: std::net::SocketAddr, b: &Engine) {
     // it through a pull, which records the address on connect.
 }
 
-
 /// Drive one real pull from `from` into `into` over TCP (the same
 /// `pull_from` path the durable job runner uses; the scheduler's timing is
 /// unit-tested separately, keeping these tests deterministic).
-async fn pull_now(into: &Arc<Engine>, from: &Engine, from_addr: std::net::SocketAddr, school_id: &str) -> xamverse_sync::PullSummary {
+async fn pull_now(
+    into: &Arc<Engine>,
+    from: &Engine,
+    from_addr: std::net::SocketAddr,
+    school_id: &str,
+) -> xamverse_sync::PullSummary {
     into.sync
         .record_peer_address(&from.identity.device_id, from_addr);
     let school_id = school_id.to_string();
@@ -130,9 +145,16 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
     let addr_book_a = addr_a;
     let job = node_b
         .sync
-        .enqueue_job("school-1", &node_a.identity.device_id, xamverse_storage::repos::JobKind::Pull, None)
+        .enqueue_job(
+            "school-1",
+            &node_a.identity.device_id,
+            xamverse_storage::repos::JobKind::Pull,
+            None,
+        )
         .expect("enqueue pull");
-    node_b.sync.record_peer_address(&node_a.identity.device_id, addr_book_a);
+    node_b
+        .sync
+        .record_peer_address(&node_a.identity.device_id, addr_book_a);
 
     {
         let conn = node_b.db.lock();
@@ -154,7 +176,6 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
             c == 1
         },
         "B to receive A's record",
-    
     )
     .await;
 
@@ -173,7 +194,12 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
     // Duplicate delivery is idempotent (lost-ack retry safety).
     node_b
         .sync
-        .enqueue_job("school-1", &node_a.identity.device_id, xamverse_storage::repos::JobKind::Pull, None)
+        .enqueue_job(
+            "school-1",
+            &node_a.identity.device_id,
+            xamverse_storage::repos::JobKind::Pull,
+            None,
+        )
         .expect("second pull");
     wait_for(
         || {
@@ -181,12 +207,64 @@ async fn test_a_two_autonomous_peers_sync_and_reconnect() {
             count_objects(&node_b, "school_settings") == 1
         },
         "idempotent re-pull",
-    
     )
     .await;
 
     node_a.stop().await;
     node_b.stop().await;
+}
+
+/// Test B — pairing into a school the responder has not enrolled must fail
+/// with a STRUCTURED peer error on the requester side (the responder maps
+/// its local FK failure to an error envelope; `request_typed` decodes it).
+/// This pins the contract that peer errors never arrive disguised as a
+/// success payload — the regression that used to surface as a misleading
+/// `missing field responder_device_id` JSON panic in the CLI.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_b_pairing_into_unenrolled_school_is_a_structured_peer_error() {
+    let dir = tempfile::tempdir().expect("tmp");
+
+    // Responder: a full node that has NOT enrolled any school, so
+    // `device_trust` (tenant-scoped FK on schools) cannot accept the pair.
+    let responder =
+        Engine::init(test_config(&dir.path().join("responder"), "Responder")).expect("engine init");
+    responder.start().await.expect("engine start");
+    let addr = responder.peer_addr().expect("listener bound after start()");
+
+    // Requester: enrolled for school-1 and pairing into that same school id.
+    let requester =
+        Engine::init(test_config(&dir.path().join("requester"), "Requester")).expect("engine init");
+    requester
+        .enroll_school("school-1", "Integration School", "seed-user")
+        .expect("enroll");
+    requester.start().await.expect("engine start");
+
+    let result = requester
+        .sync
+        .request_pairing(addr, "school-1", "Integration School")
+        .await;
+    match result {
+        Err(xamverse_sync::SyncError::PeerError { code, detail }) => {
+            assert_eq!(code, "request_failed");
+            assert!(!detail.is_empty(), "responder must explain the refusal");
+        }
+        other => panic!("expected a structured peer error, got: {other:?}"),
+    }
+
+    // Nothing may have been recorded as pending on the requester side —
+    // a failed handshake grants no trust.
+    let requester_pending = {
+        let conn = requester.db.lock();
+        xamverse_storage::repos::TrustRepo::list(&conn, "school-1")
+            .expect("trust rows")
+            .into_iter()
+            .filter(|t| t.state == xamverse_storage::repos::TrustState::Pending)
+            .count()
+    };
+    assert_eq!(requester_pending, 0, "no pending trust after refused pair");
+
+    requester.stop().await;
+    responder.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -204,7 +282,11 @@ async fn test_c_ten_submissions_collect_idempotently_and_conflict_detected() {
             .expect("start attempt");
         node_a
             .attempts
-            .save_event(&attempt.attempt_id, "answer", serde_json::json!({"q": 1, "choice": "b"}))
+            .save_event(
+                &attempt.attempt_id,
+                "answer",
+                serde_json::json!({"q": 1, "choice": "b"}),
+            )
             .expect("save answer");
         node_a
             .attempts
@@ -223,12 +305,16 @@ async fn test_c_ten_submissions_collect_idempotently_and_conflict_detected() {
         .record_peer_address(&node_a.identity.device_id, addr_a);
     node_b
         .sync
-        .enqueue_job("school-1", &node_a.identity.device_id, xamverse_storage::repos::JobKind::Collect, None)
+        .enqueue_job(
+            "school-1",
+            &node_a.identity.device_id,
+            xamverse_storage::repos::JobKind::Collect,
+            None,
+        )
         .expect("enqueue collect");
     wait_for(
         || count_objects(&node_b, "exam_attempt") == 10,
         "B to collect all 10 submissions",
-    
     )
     .await;
 
@@ -259,7 +345,10 @@ async fn test_c_ten_submissions_collect_idempotently_and_conflict_detected() {
         )
         .unwrap_or(0)
     };
-    assert_eq!(receipts_after, 10, "receipts must be idempotent per collector");
+    assert_eq!(
+        receipts_after, 10,
+        "receipts must be idempotent per collector"
+    );
 
     // Conflicting content for the same attempt is quarantined, not applied.
     // A's object is immutable (exam_attempt); a *second* revision op for the
@@ -313,46 +402,42 @@ async fn test_d_administrator_portability_and_rbac_denial() {
         let student = xamverse_security::hash_password("student-pw-1").unwrap();
         (admin, student)
     };
-    db_a
-        .tx(|conn| {
-            for (username, hash, roles) in [
-                ("admin-dana", admin_hash.clone(), vec!["admin"]),
-                ("stu-sam", student_hash.clone(), vec!["student"]),
-            ] {
-                let user_id = uuid::Uuid::now_v7().to_string();
-                xamverse_storage::repos::UsersRepo::upsert(
+    db_a.tx(|conn| {
+        for (username, hash, roles) in [
+            ("admin-dana", admin_hash.clone(), vec!["admin"]),
+            ("stu-sam", student_hash.clone(), vec!["student"]),
+        ] {
+            let user_id = uuid::Uuid::now_v7().to_string();
+            xamverse_storage::repos::UsersRepo::upsert(
+                conn,
+                &xamverse_storage::repos::UserRow {
+                    user_id: user_id.clone(),
+                    school_id: "school-1".into(),
+                    username: username.into(),
+                    display_name: username.into(),
+                    status: "active".into(),
+                    auth_hash: Some(hash),
+                    origin_device_id: None,
+                    revision: 1,
+                    updated_at: xamverse_storage::now_rfc3339(),
+                },
+            )?;
+            for role in roles {
+                let role_row =
+                    xamverse_storage::repos::UsersRepo::find_role_by_name(conn, "school-1", role)?
+                        .expect("builtin role");
+                xamverse_storage::repos::UsersRepo::grant_role(
                     conn,
-                    &xamverse_storage::repos::UserRow {
-                        user_id: user_id.clone(),
-                        school_id: "school-1".into(),
-                        username: username.into(),
-                        display_name: username.into(),
-                        status: "active".into(),
-                        auth_hash: Some(hash),
-                        origin_device_id: None,
-                        revision: 1,
-                        updated_at: xamverse_storage::now_rfc3339(),
-                    },
+                    "school-1",
+                    &user_id,
+                    &role_row.role_id,
+                    None,
                 )?;
-                for role in roles {
-                    let role_row = xamverse_storage::repos::UsersRepo::find_role_by_name(
-                        conn,
-                        "school-1",
-                        role,
-                    )?
-                    .expect("builtin role");
-                    xamverse_storage::repos::UsersRepo::grant_role(
-                        conn,
-                        "school-1",
-                        &user_id,
-                        &role_row.role_id,
-                        None,
-                    )?;
-                }
             }
-            Ok(())
-        })
-        .expect("seed users");
+        }
+        Ok(())
+    })
+    .expect("seed users");
 
     // Publish the identities as signed ops (the production enrollment flow:
     // direct repo writes are local-only; replication goes through ops).
@@ -390,13 +475,21 @@ async fn test_d_administrator_portability_and_rbac_denial() {
 
     // B pulls identity records over TCP (restricted category: requires trust).
     let summary = pull_now(&node_b, &node_a, addr_a, "school-1").await;
-    assert!(summary.applied >= 2, "admin + student identities must arrive");
+    assert!(
+        summary.applied >= 2,
+        "admin + student identities must arrive"
+    );
     node_b
         .sync
         .record_peer_address(&node_a.identity.device_id, addr_a);
     node_b
         .sync
-        .enqueue_job("school-1", &node_a.identity.device_id, xamverse_storage::repos::JobKind::Pull, None)
+        .enqueue_job(
+            "school-1",
+            &node_a.identity.device_id,
+            xamverse_storage::repos::JobKind::Pull,
+            None,
+        )
         .expect("pull identities");
 
     // The admin can now authenticate on B — distributed identity works.
@@ -431,9 +524,11 @@ async fn test_d_administrator_portability_and_rbac_denial() {
         )
         .expect("student login on node B");
     assert!(matches!(
-        node_b
-            .authz
-            .require(&ctx_student, xamverse_security::reserved::BACKUPS_MANAGE, None),
+        node_b.authz.require(
+            &ctx_student,
+            xamverse_security::reserved::BACKUPS_MANAGE,
+            None
+        ),
         Err(xamverse_security::AuthError::PermissionDenied { .. })
     ));
 
@@ -454,4 +549,3 @@ async fn test_d_administrator_portability_and_rbac_denial() {
     node_a.stop().await;
     node_b.stop().await;
 }
-

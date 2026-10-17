@@ -40,6 +40,10 @@ pub struct LicenceCertificate {
 
 impl LicenceCertificate {
     /// Canonical bytes covered by the issuer signature.
+    // serde over a struct of borrowed Strings cannot fail at runtime (no
+    // maps, no custom serializers); the only failure mode is OOM, where the
+    // process is lost regardless. Allowed explicitly, not silently.
+    #[allow(clippy::expect_used)]
     pub fn signing_message(&self) -> Vec<u8> {
         serde_json::to_vec(&UnsignedView {
             licence_id: &self.licence_id,
@@ -59,7 +63,12 @@ impl LicenceCertificate {
     }
 
     /// Cryptographic + device-binding verification only (no clock math).
-    pub fn verify_binding(&self, trusted_issuer_pks: &[String], local_device_id: &str, local_fingerprint: &str) -> Result<(), LicenceError> {
+    pub fn verify_binding(
+        &self,
+        trusted_issuer_pks: &[String],
+        local_device_id: &str,
+        local_fingerprint: &str,
+    ) -> Result<(), LicenceError> {
         if !PLANS.contains(&self.plan.as_str()) {
             return Err(LicenceError::Invalid(format!("unknown plan {}", self.plan)));
         }
@@ -67,7 +76,9 @@ impl LicenceCertificate {
             .iter()
             .any(|pk| verify_signature(pk, &self.signing_message(), &self.signature));
         if !signed_ok {
-            return Err(LicenceError::Invalid("signature not from a trusted issuer".into()));
+            return Err(LicenceError::Invalid(
+                "signature not from a trusted issuer".into(),
+            ));
         }
         if self.device_id != local_device_id || self.device_fingerprint != local_fingerprint {
             // Copy protection: a licence is bound to its installation.
@@ -78,7 +89,12 @@ impl LicenceCertificate {
 
     /// Full verification: binding + temporal window. Used at import time,
     /// where an already fully-expired licence is refused outright.
-    pub fn verify(&self, trusted_issuer_pks: &[String], local_device_id: &str, local_fingerprint: &str) -> Result<(), LicenceError> {
+    pub fn verify(
+        &self,
+        trusted_issuer_pks: &[String],
+        local_device_id: &str,
+        local_fingerprint: &str,
+    ) -> Result<(), LicenceError> {
         self.verify_binding(trusted_issuer_pks, local_device_id, local_fingerprint)?;
         let now = chrono::Utc::now();
         let not_before = chrono::DateTime::parse_from_rfc3339(&self.not_before)
@@ -88,7 +104,7 @@ impl LicenceCertificate {
         if now < not_before {
             return Err(LicenceError::NotYetValid);
         }
-        if now > expires_at + chrono::TimeDelta::try_days(i64::from(self.grace_days)).unwrap() {
+        if now > expires_at + days_delta(i64::from(self.grace_days))? {
             return Err(LicenceError::Expired);
         }
         Ok(())
@@ -101,7 +117,14 @@ impl LicenceCertificate {
         hasher.update(b"|");
         hasher.update(self.expires_at.as_bytes());
         let digest = hasher.finalize();
-        format!("LIC-{}", &digest.iter().take(4).map(|b| format!("{b:02X}")).collect::<String>())
+        format!(
+            "LIC-{}",
+            digest
+                .iter()
+                .take(4)
+                .map(|b| format!("{b:02X}"))
+                .collect::<String>()
+        )
     }
 }
 
@@ -174,6 +197,8 @@ impl ActivationRequest {
     }
 
     /// Canonical bytes covered by the device signature.
+    // Same infallibility argument as LicenceCertificate::signing_message.
+    #[allow(clippy::expect_used)]
     pub fn signing_message(&self) -> Vec<u8> {
         serde_json::to_vec(&RequestView {
             device_id: &self.device_id,
@@ -205,4 +230,31 @@ struct RequestView<'a> {
     school_hint: &'a str,
     generated_at: &'a str,
     device_public_key: &'a str,
+}
+
+/// The on-disk interchange format of an activation request file.
+///
+/// One envelope, shared by BOTH sides of the flow — `xamverse-peer
+/// licence-request` writes it and the issuer tool reads it — so the file
+/// shape can never drift between the two tools again (it did once: the CLI
+/// wrote the bare request while the issuer expected this wrapper).
+/// The envelope (instead of the bare request) leaves room for issuer-side
+/// metadata without another breaking format change.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivationRequestFile {
+    pub request: ActivationRequest,
+}
+
+/// Convert a certificate-provided day count into a TimeDelta as a CHECKED
+/// operation: the value comes from an untrusted licence file, so an absurd
+/// count must be an error, not a panic.
+pub(crate) fn days_delta(days: i64) -> Result<chrono::TimeDelta, LicenceError> {
+    chrono::TimeDelta::try_days(days)
+        .ok_or_else(|| LicenceError::Invalid("validity day count overflows".into()))
+}
+
+/// Status computation must stay total (it runs on every query against
+/// untrusted persisted data), so overflow saturates instead of erroring.
+pub(crate) fn days_delta_saturating(days: i64) -> chrono::TimeDelta {
+    chrono::TimeDelta::try_days(days).unwrap_or(chrono::TimeDelta::MAX)
 }

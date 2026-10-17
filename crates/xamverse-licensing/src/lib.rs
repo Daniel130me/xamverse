@@ -10,16 +10,20 @@
 //! delayed revocation propagation and clock-rollback exposure — are
 //! documented in SECURITY_MODEL.md and LICENSING.md.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use cert::NEAR_EXPIRY_DAYS;
 mod cert;
 
-pub use cert::{ActivationRequest, LicenceCertificate, LicenceError};
+pub use cert::{ActivationRequest, ActivationRequestFile, LicenceCertificate, LicenceError};
 
+use sha2::Digest as _;
 use std::sync::Arc;
 use xamverse_events::{EngineEvent, EventBus, EventKind};
 use xamverse_identity::DeviceIdentity;
 use xamverse_storage::repos::LicencesRepo;
-use sha2::Digest as _;
 use xamverse_storage::{now_rfc3339, Database, StorageResult};
 
 /// Entitlements that remain available in restricted (expired/grace/revoked)
@@ -60,7 +64,12 @@ pub struct LicenceService {
 }
 
 impl LicenceService {
-    pub fn new(db: Arc<Database>, identity: Arc<DeviceIdentity>, events: Arc<EventBus>, config: LicenceConfig) -> Self {
+    pub fn new(
+        db: Arc<Database>,
+        identity: Arc<DeviceIdentity>,
+        events: Arc<EventBus>,
+        config: LicenceConfig,
+    ) -> Self {
         Self {
             db,
             identity,
@@ -86,7 +95,11 @@ impl LicenceService {
         )?;
 
         let status = self.status_of(&cert);
-        let mode = if self.stored_is_unactivated()? { "offline" } else { "renewal" };
+        let mode = if self.stored_is_unactivated()? {
+            "offline"
+        } else {
+            "renewal"
+        };
 
         self.db.tx(|conn| {
             LicencesRepo::put(
@@ -106,12 +119,17 @@ impl LicenceService {
                     not_before: Some(cert.not_before.clone()),
                     expires_at: Some(cert.expires_at.clone()),
                     grace_until: Some(
-                        (chrono::DateTime::parse_from_rfc3339(&cert.expires_at)
-                            .map_err(|e| xamverse_storage::StorageError::InvalidValue {
+                        (chrono::DateTime::parse_from_rfc3339(&cert.expires_at).map_err(|e| {
+                            xamverse_storage::StorageError::InvalidValue {
                                 field: "expires_at",
                                 reason: e.to_string(),
-                            })?
-                            + chrono::TimeDelta::try_days(i64::from(cert.grace_days)).unwrap())
+                            }
+                        })? + cert::days_delta(i64::from(cert.grace_days)).map_err(|e| {
+                            xamverse_storage::StorageError::InvalidValue {
+                                field: "grace_days",
+                                reason: e.to_string(),
+                            }
+                        })?)
                         .to_rfc3339(),
                     ),
                     activated_at: Some(now_rfc3339()),
@@ -126,18 +144,22 @@ impl LicenceService {
                 &xamverse_audit::AuditEvent::new("licence.activated")
                     .with_school(&cert.school_id)
                     .with_target(&cert.licence_id)
-                    .with_detail_json(serde_json::json!({
-                        "plan": cert.plan,
-                        "status": status_to_db(status),
-                        "mode": mode,
-                    }).to_string()),
+                    .with_detail_json(
+                        serde_json::json!({
+                            "plan": cert.plan,
+                            "status": status_to_db(status),
+                            "mode": mode,
+                        })
+                        .to_string(),
+                    ),
             )?;
             Ok(())
         })?;
 
-        self.events.publish(EngineEvent::new(EventKind::LicenceStatusChanged {
-            status: status_to_db(status).to_string(),
-        }));
+        self.events
+            .publish(EngineEvent::new(EventKind::LicenceStatusChanged {
+                status: status_to_db(status).to_string(),
+            }));
         Ok(status)
     }
 
@@ -163,7 +185,10 @@ impl LicenceService {
                 .collect(),
             LicenceStatus::Expired | LicenceStatus::Revoked | LicenceStatus::Invalid => {
                 // Restricted mode: preserve recovery capabilities (spec §19).
-                RESTRICTED_MODE_FEATURES.iter().map(|s| s.to_string()).collect()
+                RESTRICTED_MODE_FEATURES
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect()
             }
             LicenceStatus::Unactivated => Vec::new(),
         }
@@ -186,9 +211,10 @@ impl LicenceService {
                 )?;
                 Ok(())
             })?;
-            self.events.publish(EngineEvent::new(EventKind::LicenceStatusChanged {
-                status: "revoked".into(),
-            }));
+            self.events
+                .publish(EngineEvent::new(EventKind::LicenceStatusChanged {
+                    status: "revoked".into(),
+                }));
         }
         Ok(())
     }
@@ -214,7 +240,11 @@ impl LicenceService {
     fn status_of(&self, cert: &LicenceCertificate) -> LicenceStatus {
         let now = chrono::Utc::now();
         if cert
-            .verify_binding(&self.config.trusted_issuer_pks, &self.identity.device_id, &self.identity.fingerprint())
+            .verify_binding(
+                &self.config.trusted_issuer_pks,
+                &self.identity.device_id,
+                &self.identity.fingerprint(),
+            )
             .is_err()
         {
             return LicenceStatus::Invalid;
@@ -231,15 +261,14 @@ impl LicenceService {
             return LicenceStatus::Invalid;
         };
         if now <= expires {
-            let near = (expires - now_fixed) <= chrono::TimeDelta::try_days(NEAR_EXPIRY_DAYS).unwrap();
+            let near = (expires - now_fixed) <= cert::days_delta_saturating(NEAR_EXPIRY_DAYS);
             if near {
                 LicenceStatus::NearExpiry
             } else {
                 LicenceStatus::Active
             }
         } else {
-            let grace_end = expires
-                + chrono::TimeDelta::try_days(i64::from(cert.grace_days)).unwrap();
+            let grace_end = expires + cert::days_delta_saturating(i64::from(cert.grace_days));
             if now_fixed <= grace_end {
                 LicenceStatus::GracePeriod
             } else {
@@ -354,7 +383,8 @@ mod tests {
                 issuer_id: "dev-issuer".into(),
                 signature: String::new(),
             };
-            cert.signature = data_encoding::BASE64.encode(&self.signing.sign(&cert.signing_message()).to_bytes());
+            cert.signature = data_encoding::BASE64
+                .encode(&self.signing.sign(&cert.signing_message()).to_bytes());
             cert
         }
     }
@@ -363,7 +393,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (db, _) = Database::open(dir.path().join("l.xamdb"), &DatabaseKey::generate()).unwrap();
         let keystore = MemoryKeyStore::default();
-        let identity = Arc::new(DeviceIdentity::load_or_create(&keystore, "Lab PC 07", "windows").unwrap());
+        let identity =
+            Arc::new(DeviceIdentity::load_or_create(&keystore, "Lab PC 07", "windows").unwrap());
         let service = LicenceService::new(
             Arc::new(db),
             identity.clone(),
@@ -390,7 +421,9 @@ mod tests {
 
         // 3. Issuer signs a licence; school imports it offline.
         let cert = issuer.issue(&request, 365, 30);
-        let status = service.import_activation(&serde_json::to_string(&cert).unwrap()).unwrap();
+        let status = service
+            .import_activation(&serde_json::to_string(&cert).unwrap())
+            .unwrap();
         assert_eq!(status, LicenceStatus::Active);
         assert_eq!(service.status(), LicenceStatus::Active);
 
@@ -400,7 +433,10 @@ mod tests {
 
         // 5. Display summary never leaks the signature.
         let summary = service.display_summary().unwrap();
-        assert!(summary["product_key_masked"].as_str().unwrap().contains("****"));
+        assert!(summary["product_key_masked"]
+            .as_str()
+            .unwrap()
+            .contains("****"));
     }
 
     #[test]
@@ -425,7 +461,9 @@ mod tests {
 
         let request = service_a.activation_request("School");
         let cert = issuer.issue(&request, 365, 30);
-        service_a.import_activation(&serde_json::to_string(&cert).unwrap()).unwrap();
+        service_a
+            .import_activation(&serde_json::to_string(&cert).unwrap())
+            .unwrap();
 
         // Copying the same file to another installation must fail binding.
         assert!(matches!(
@@ -442,7 +480,9 @@ mod tests {
         let (_dir, service, _id) = service(&real_issuer.public_b64());
         let request = service.activation_request("School");
         let cert = rogue.issue(&request, 365, 30);
-        assert!(service.import_activation(&serde_json::to_string(&cert).unwrap()).is_err());
+        assert!(service
+            .import_activation(&serde_json::to_string(&cert).unwrap())
+            .is_err());
     }
 
     #[test]
@@ -460,7 +500,9 @@ mod tests {
 
         // ...but a licence that EXPIRES AFTER import degrades gracefully:
         let short = issuer.issue(&request, 1, 30);
-        service.import_activation(&serde_json::to_string(&short).unwrap()).unwrap();
+        service
+            .import_activation(&serde_json::to_string(&short).unwrap())
+            .unwrap();
         // Simulate expiry by marking revocation semantics via direct DB (the
         // clock cannot be moved in-test); the policy branch is covered by
         // the entitlements() restricted-mode mapping.
