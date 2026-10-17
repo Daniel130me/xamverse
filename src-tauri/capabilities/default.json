@@ -1,0 +1,11 @@
+// Minimal capability: the scaffold exposes only its two commands and core
+// window features. Phase 3 tightens this alongside the real command set —
+// capabilities are allow-by-default-deny, so adding engine commands later
+// means listing them here explicitly (good: invisible surface stays zero).
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "XamVerse shell default capability (scaffold)",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
