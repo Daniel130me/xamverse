@@ -1,0 +1,46 @@
+# Desktop shell build (scaffold preview).
+#
+# NOTE(scaffold): the src-tauri shell is a SCAFFOLD (see PHASE2_COMPLETION_REPORT
+# §5.3): it builds a real windowed app but the engine embedding, frontend
+# bundle and installers are Phase 3 work. This workflow is therefore
+# workflow_dispatch-only and non-blocking (continue-on-error) until the shell
+# ships — it exists so the bundling pipeline is proven BEFORE it gates.
+#
+# Bundling (.msi/.dmg) and code signing are documented in
+# docs/phase2/UPDATES_AND_INSTALLERS.md §7; enable them here when the shell
+# is production-ready.
+
+name: desktop
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-shell:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true # scaffold preview — becomes a hard gate in Phase 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: oven-sh/setup-bun@v2
+      - name: Build the shell (no bundle — installers are Phase 3)
+        working-directory: src-tauri
+        run: |
+          bun x @tauri-apps/cli build --no-bundle --target ${{ matrix.target }}
