@@ -90,23 +90,26 @@ where marked, executed) during this documentation pass.
 
 ## Storage and replication
 
-12. **FileKeyStore residual risk.** The fallback key file lives on the same
+12. **FileKeyStore residual risk on headless deployments.** The fallback key file lives on the same
     disk as the database with `0600` permissions: protected from other OS
     users, not from an administrator or full-disk access
-    (`keystore.rs` `NOTE(non-standard)`). Production desktop builds must
-    inject the OS-keychain implementation (trait ready, wiring belongs to
-    the Tauri shell).
+    (`keystore.rs` `NOTE(non-standard)`). **RESOLVED for the desktop shell:**
+    `src-tauri` injects `PlatformKeyStore`, backed by Windows Credential
+    Manager or macOS Keychain and namespaced per canonical data directory.
+    The non-standard fallback remains for explicitly headless/CI/Linux uses.
 13. **Single-writer database concurrency model.** One connection behind a
     mutex; all writes serialize. Correct and simple at school scale, but
     handler bodies run short SQLite transactions directly on async threads
     (`handler.rs` `NOTE(perf)` documents the measured trade-off and the
     `spawn_blocking` alternative). A future multi-core write bottleneck
     would start here.
-14. **No multi-node integration test binaries.** The ADRs reference
-    "integration Tests A–J"; the current tree has per-crate unit suites
-    (76 passing) and the CLI demo, but no dedicated `tests/` integration
-    binaries. Cross-node behaviour is exercised by the network tests (real
-    TCP) and the §4 demo, not by an automated multi-node suite yet.
+14. **Multi-node integration coverage is incomplete.** **PARTIALLY
+    RESOLVED.** `tests/integration` now implements automated Tests A–D with
+    independent data directories and real TCP/Noise connections: autonomous
+    sync/reconnect, structured pairing refusal, idempotent submission
+    collection/conflict rejection, and distributed administrator identity
+    with an audited RBAC denial. Tests E–J from the original architecture
+    checklist remain to be implemented.
 15. **Attempt-event chains are per-attempt, not global.** Tamper evidence
     for answers is anchored per attempt (`attempt_events.prev_hash/hash` +
     finalize signature); there is no global chain linking all attempts on a
@@ -121,19 +124,19 @@ where marked, executed) during this documentation pass.
 
 ## Application layer
 
-18. **The Tauri shell and `engine-sdk` are stubs.** ~~Both are empty~~
-    **RESOLVED (scaffolded).** `packages/engine-sdk` now provides the typed
+18. **The Tauri shell and `engine-sdk` were stubs.** ~~Both are empty~~
+    **RESOLVED.** `packages/engine-sdk` provides the typed
     `EngineClient` with three transports: the browser adapter works against
-    today's bridge routes (13 SDK tests pin the contract), the desktop
-    adapter invokes `engine_<ns>_<op>` commands (they exist once the shell
-    implements them), and a boot-surface mock backs vitest/storybook.
-    `src-tauri` builds a real windowed scaffold (`shell_status` /
-    `shell_ping`, restrictive CSP, minimal capabilities) with the Phase 3
-    wiring points documented. The engine embedding, the full command set,
-    and the desktop IPC round-trip remain open (Phase 3).
-19. **No frontend bundle pipeline for the bridge.** The web bridge can serve
-    `frontend_dir` but nothing builds the Next.js app into a static bundle
-    wired to it yet (Phase 3 work).
+    bridge routes, the desktop adapter invokes the complete
+    `engine_<ns>_<op>` command surface, and a boot-surface mock backs
+    vitest/storybook. `src-tauri` embeds the engine, owns its lifecycle,
+    publishes engine events, and enforces live session/RBAC checks in native
+    commands. Seventeen SDK tests pin the adapters, including local-only
+    bootstrap, race-free event replay, and asynchronous Tauri listener cleanup.
+19. **No frontend bundle pipeline for the bridge.** **RESOLVED.**
+    `npm run desktop:prepare` produces a Next.js static export and copies it
+    into the Tauri resources. The embedded browser bridge and the desktop
+    window therefore serve the same versioned frontend assets.
 20. **AI-assisted question generation is not started.** Per the handoff §5
     it is Phase 3 (cloud provider + local model hook); the engine has no
     primitive for it.

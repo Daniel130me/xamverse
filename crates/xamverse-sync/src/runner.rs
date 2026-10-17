@@ -565,7 +565,7 @@ impl SyncEngine {
 }
 
 /// Pull outcome summary for diagnostics and the collection dashboard.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
 pub struct PullSummary {
     pub applied: usize,
     pub duplicates: usize,

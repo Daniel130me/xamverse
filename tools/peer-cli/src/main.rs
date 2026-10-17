@@ -17,6 +17,7 @@
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use xamverse_core::{Engine, EngineConfig};
 use xamverse_licensing::ActivationRequestFile;
@@ -180,6 +181,13 @@ async fn run(cli: Cli) -> Result<()> {
                 engine.identity.fingerprint(),
                 engine.config.peer_port
             );
+            // `serve` is commonly supervised with stdout redirected to a
+            // file. Rust then block-buffers stdout, so flush the readiness
+            // record before waiting for Ctrl-C; orchestration must never
+            // infer startup from an arbitrary timeout.
+            std::io::stdout()
+                .flush()
+                .context("flush server readiness")?;
             tokio::signal::ctrl_c()
                 .await
                 .context("waiting for Ctrl-C")?;

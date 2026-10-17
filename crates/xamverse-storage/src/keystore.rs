@@ -8,8 +8,10 @@
 use crate::error::{StorageError, StorageResult};
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 /// Contract for storing and retrieving engine secrets by name.
 ///
@@ -95,10 +97,7 @@ impl FileKeyStore {
         let path = self.key_path(name)?;
         let mut file = fs::File::create(&path)?;
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        }
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
         file.write_all(bytes_to_hex(secret).as_bytes())?;
         file.sync_all()?;
         Ok(())

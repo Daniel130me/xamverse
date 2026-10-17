@@ -128,7 +128,11 @@ export function QuestionBanksScreen() {
         <TabsContent value="archived" className="mt-3">{filterBar(archived)}</TabsContent>
       </Tabs>
 
-      <QuestionEditorDialog question={editing} onOpenChange={(v) => !v && setEditing(null)} />
+      <QuestionEditorDialog
+        key={editing?.id ?? 'closed'}
+        question={editing}
+        onOpenChange={(v) => !v && setEditing(null)}
+      />
     </div>
   );
 }
@@ -417,7 +421,6 @@ function QuestionEditorDialog({ question, onOpenChange }: { question: Question |
   const user = store.currentUser()!;
   const [q, setQ] = React.useState<Question | null>(question);
   const [preview, setPreview] = React.useState(false);
-  React.useEffect(() => setQ(question), [question]);
   if (!q) return null;
   const canApprove = store.can('questions.approve');
   const isOwn = q.createdBy === user.id;

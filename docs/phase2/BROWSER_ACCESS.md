@@ -91,11 +91,13 @@ engine's `EventBus`:
 * **Tenant-scoped delivery**: events carrying a `school_id` different from
   the session's are dropped before serialization — a browser session only
   ever sees its school (or school-less engine events).
-* Each event is emitted with `event: <kind_name>` and the full JSON as data,
-  with keep-alive comments to survive proxies.
-* Reconnect recovery: clients that track the last event `id` can resubscribe
-  via the bus history (`subscribe_since`, bounded at 1000 events) — the
-  same resumability primitive the desktop shell uses.
+* Each event uses the default SSE `message` type so browser `onmessage`
+  handlers receive it. The full typed event (including its `type`) is JSON in
+  `data`, and the SSE `id` field carries the engine event UUID.
+* Reconnect recovery: native EventSource reconnects send `Last-Event-ID`;
+  cold starts send the equivalent `last_event_id` query parameter. Both feed
+  the bus history (`subscribe_since`, bounded at 1000 events) before switching
+  to live delivery — the same resumability primitive the desktop shell uses.
 * Payloads are notifications, not transport: events cap at ~8 KiB and large
   state lives in the database behind the REST routes.
 
@@ -103,7 +105,8 @@ engine's `EventBus`:
 
 * **Origin allowlist**: `WebConfig.allowed_origins` (e.g.
   `http://192.168.1.20:47811`); an **empty list means same-origin only**.
-  State-changing requests carrying an `Origin` header not on the list are
+  In that mode the Origin authority must match the request Host. With an
+  explicit list, the Origin must match an entry exactly. Other origins are
   `403 origin not allowed`.
 * **CSRF posture**: the current build has **no CSRF token**. Defence is
   layered: `SameSite=Strict` cookies (cross-site requests carry no cookie)

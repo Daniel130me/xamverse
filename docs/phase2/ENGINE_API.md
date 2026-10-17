@@ -76,6 +76,10 @@ Backed by `xamverse-security::AuthService` (§3 params in
 memory (desktop) or lets the cookie do the work (browser).
 
 ```ts
+bootstrapStatus() → { required: boolean }
+bootstrap(schoolName: string, username: string, displayName: string, password: string)
+  → { identity: BootstrapIdentity, token: string, session: Session }
+  // desktop-only, local, and permanently disabled after the first school
 login(schoolId: string, username: string, password: string, kind: "desktop" | "browser")
   → { token: string, session: Session }
 authenticate(token: string)                       → Session
@@ -84,9 +88,6 @@ lockSession(token: string)                        → { ok: true }
 unlockSession(token: string, password: string)    → Session
 changePassword(schoolId: string, userId: string, old: string | null, next: string)
   → { revision: number }        // revokes all of the user's sessions on this node
-revokeAllForUser(schoolId: string, userId: string, reason: string)
-  → { revoked: number }
-requireFresh(session: Session)                    → void   // throws reauthentication_required
 
 // Session (serde shape of SessionContext)
 // { "token_hash": "…", "user_id": "…", "school_id": "…", "kind": "desktop",
@@ -113,10 +114,12 @@ the next check, no restart).
 can(session: Session, permission: string)                  → boolean
 require(session: Session, permission: string, target?: string)  → void  // throws permission_denied
 listReserved()  → string[]   // the 14 engine-reserved permissions
-listBuiltinRoles(schoolId: string) → RoleRow[]   // owner/admin/teacher/student + custom
-grantRole(schoolId, userId, roleId, grantedBy) / revokeRole(...)
-effectivePermissions(schoolId: string, userId: string) → string[]
 ```
+
+The engine contains role/user repositories for the application layer, but
+staff/student administration remains deliberately outside this infrastructure
+SDK. Native commands re-check live permissions and require a fresh session for
+high-impact operations.
 
 Reserved namespace (engine-enforced; everything else is school data):
 `devices.pair`, `devices.revoke`, `sync.read`, `sync.write`,
@@ -131,8 +134,8 @@ Backed by `SyncEngine` (pairing, trust) + `Discovery` + `ManualPeers`.
 ```ts
 status()                                  → EngineStatus["schools"]  // trusted_peers per school
 scan()                                    → PeerAdvertisement[]      // mDNS, when enabled
-addManualPeer(ip: string, port?: number)  → PeerAdvertisement        // kv-persisted
-listManualPeers()                         → PeerAdvertisement[]
+addManualPeer(ip: string, port?: number)  → ManualPeerEntry          // kv-persisted
+listManualPeers()                         → ManualPeerEntry[]
 requestPairing(addr: string, schoolId: string, schoolName: string) → PairPending
 approvePairing(schoolId: string, deviceId: string, approvedBy: string) → { ok: true }
 revokeDevice(schoolId: string, deviceId: string, revokedBy: string, reason: string) → { ok: true }
@@ -143,6 +146,8 @@ pingPeer(addr: string)                    → { rtt_ms: number, device_id: strin
 ```
 
 ```json
+// ManualPeerEntry
+{ "key": "018f…", "addr": "192.168.1.24:47810" }
 // PeerAdvertisement (mDNS TXT: di/nm/fp/pv)
 { "device_id": "018f…", "name": "Lab PC 07", "fingerprint": "XV-7KQ2M-B4RTF-W9XJ2-P3DNC",
   "protocol_major": 1, "port": 47810, "addresses": ["192.168.1.24"] }

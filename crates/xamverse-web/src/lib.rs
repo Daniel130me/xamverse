@@ -20,10 +20,10 @@
 // for library code — this exemption is scoped to cfg(test) only.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response, Sse};
-use axum::routing::{get, post};
+use axum::routing::{get, get_service, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use std::convert::Infallible;
@@ -121,21 +121,12 @@ impl WebServer {
         // Static frontend (production bundle) when configured.
         if let Some(dir) = config.frontend_dir.clone() {
             let index = dir.join("index.html");
-            router = router.fallback(get(move || {
-                let index = index.clone();
-                async move {
-                    match tokio::fs::read(&index).await {
-                        // Tuple IntoResponse — no fallible builder, no unwrap.
-                        Ok(bytes) => (
-                            StatusCode::OK,
-                            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                            bytes,
-                        )
-                            .into_response(),
-                        Err(_) => StatusCode::NOT_FOUND.into_response(),
-                    }
-                }
-            }));
+            // Serve hashed JS/CSS/media normally and fall back to index.html
+            // for client-side routes. Returning index for every asset path
+            // would produce HTML with a JavaScript content type mismatch.
+            let files = tower_http::services::ServeDir::new(dir)
+                .not_found_service(tower_http::services::ServeFile::new(index));
+            router = router.fallback_service(get_service(files));
         }
 
         // Security headers on every response.
@@ -175,11 +166,8 @@ async fn login(
     // Origin header matching the allowlist (empty allowlist = same-origin,
     // where browsers still send Origin on cross-site POSTs only — we thus
     // require an exact match when any Origin is present).
-    if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
-        let allowed = state.allowed_origins.iter().any(|a| a == origin);
-        if !allowed {
-            return error_response(StatusCode::FORBIDDEN, "origin not allowed");
-        }
+    if !origin_is_allowed(&headers, &state.allowed_origins) {
+        return error_response(StatusCode::FORBIDDEN, "origin not allowed");
     }
     // Credential length sanity (the framework caps the body; this guards
     // against absurd inputs even when embedded).
@@ -273,13 +261,49 @@ async fn sync_queue(State(state): State<WebState>, headers: HeaderMap) -> Respon
 
 /// Server-sent events, filtered to the session's authorization context.
 /// Reconnect recovery uses the event bus history (`subscribe_since`).
-async fn events_sse(State(state): State<WebState>, headers: HeaderMap) -> Response {
+#[derive(Default, Deserialize)]
+struct EventCursor {
+    /// Explicit replay cursor for a fresh EventSource connection. Native
+    /// reconnects use Last-Event-ID; accepting both keeps recovery reliable.
+    last_event_id: Option<uuid::Uuid>,
+}
+
+enum BrowserEventReceiver {
+    Live(tokio::sync::broadcast::Receiver<xamverse_events::EngineEvent>),
+    Replay(xamverse_events::ReplayReceiver),
+}
+
+impl BrowserEventReceiver {
+    async fn recv(
+        &mut self,
+    ) -> Result<xamverse_events::EngineEvent, tokio::sync::broadcast::error::RecvError> {
+        match self {
+            Self::Live(receiver) => receiver.recv().await,
+            Self::Replay(receiver) => receiver.recv().await,
+        }
+    }
+}
+
+async fn events_sse(
+    State(state): State<WebState>,
+    Query(cursor): Query<EventCursor>,
+    headers: HeaderMap,
+) -> Response {
     let engine = state.engine.clone();
     let ctx = match authenticate(&engine, &headers) {
         Ok(ctx) => ctx,
         Err(status) => return status.into_response(),
     };
-    let receiver = engine.events.subscribe();
+    let last_event_id = cursor.last_event_id.or_else(|| {
+        headers
+            .get("last-event-id")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse().ok())
+    });
+    let receiver = match last_event_id {
+        Some(id) => BrowserEventReceiver::Replay(engine.events.subscribe_since(id)),
+        None => BrowserEventReceiver::Live(engine.events.subscribe()),
+    };
     let school_id = ctx.school_id.clone();
     let stream =
         futures_util::stream::unfold((receiver, school_id), |(mut rx, school_id)| async move {
@@ -296,8 +320,13 @@ async fn events_sse(State(state): State<WebState>, headers: HeaderMap) -> Respon
                         let json = serde_json::to_string(&event).unwrap_or_default();
                         return Some((
                             Ok::<_, Infallible>(
+                                // Keep this as the default SSE `message` event:
+                                // the typed kind already lives in the JSON and
+                                // browser EventSource.onmessage only receives
+                                // unnamed events. `id` enables native reconnect
+                                // recovery through Last-Event-ID.
                                 axum::response::sse::Event::default()
-                                    .event(event.kind.kind_name())
+                                    .id(event.id.to_string())
                                     .data(json),
                             ),
                             (rx, school_id),
@@ -336,6 +365,47 @@ fn session_token(headers: &HeaderMap) -> Option<String> {
         .map(str::trim)
         .find_map(|c| c.strip_prefix("xv_session="))
         .map(str::to_string)
+}
+
+/// Validate the Origin on state-changing browser requests.
+///
+/// An explicit allowlist is authoritative. With an empty allowlist, the
+/// bridge is same-origin-only: the Origin authority must match Host. Requests
+/// without Origin remain valid for non-browser clients and same-origin user
+/// agents that omit it.
+fn origin_is_allowed(headers: &HeaderMap, allowed_origins: &[String]) -> bool {
+    let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return true;
+    };
+
+    if !allowed_origins.is_empty() {
+        return allowed_origins.iter().any(|allowed| allowed == origin);
+    }
+
+    let Some(host) = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    let Ok(uri) = origin.parse::<axum::http::Uri>() else {
+        return false;
+    };
+    if !matches!(uri.scheme_str(), Some("http" | "https")) {
+        return false;
+    }
+    if uri
+        .path_and_query()
+        .is_some_and(|path| path.as_str() != "/")
+    {
+        return false;
+    }
+
+    uri.authority()
+        .is_some_and(|authority| authority.as_str().eq_ignore_ascii_case(host))
 }
 
 fn authenticate(
@@ -782,6 +852,33 @@ mod tests {
         )
         .await;
         assert_eq!(res.status(), 200);
+
+        shutdown.send(true).unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_allowlist_accepts_same_origin_and_rejects_cross_origin() {
+        let (addr, _engine, shutdown, _dir) = spawn_server(vec![]).await;
+        let client = reqwest_stub::Client::new();
+        let base = format!("http://{addr}");
+
+        let same_origin = post(
+            &client,
+            &format!("{base}/api/v1/auth/login"),
+            serde_json::json!({"school_id": "s1", "username": "ada", "password": "owner-pw-1"}),
+            Some(&base),
+        )
+        .await;
+        assert_eq!(same_origin.status(), 200);
+
+        let cross_origin = post(
+            &client,
+            &format!("{base}/api/v1/auth/login"),
+            serde_json::json!({"school_id": "s1", "username": "ada", "password": "owner-pw-1"}),
+            Some("http://evil.example"),
+        )
+        .await;
+        assert_eq!(cross_origin.status(), 403);
 
         shutdown.send(true).unwrap();
     }

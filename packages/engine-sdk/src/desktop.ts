@@ -1,7 +1,7 @@
 /**
  * Desktop adapter — one Tauri command per namespace/op, 1:1 with the engine
- * subsystems (contract: docs/phase2/ENGINE_API.md; the command surface the
- * src-tauri shell must expose is exactly `engine_<namespace>_<op>`).
+ * subsystems (contract: docs/phase2/ENGINE_API.md; the command surface
+ * exposed by src-tauri is exactly `engine_<namespace>_<op>`).
  *
  * The SDK takes `invoke` as an injected function instead of importing
  * `@tauri-apps/api` directly: the SDK stays dependency-free and testable,
@@ -24,7 +24,11 @@ export interface DesktopClientOptions {
    * it, `events.subscribe` fails loudly: a desktop build without event
    * forwarding is a broken shell, not a recoverable state.
    */
-  listen?: (onEvent: (e: EngineEventLike) => void) => EventUnsubscribe;
+  listen?: (
+    onEvent: (e: EngineEventLike) => void,
+  ) => EventUnsubscribe | Promise<EventUnsubscribe>;
+  /** Receives asynchronous Tauri listener-registration failures. */
+  onListenError?: (error: unknown) => void;
 }
 
 export interface EngineEventLike {
@@ -41,11 +45,16 @@ export function createDesktopClient(options: DesktopClientOptions): EngineClient
 
   /** Call `engine_<ns>_<op>` and normalize the engine's error envelope. */
   async function call<T>(ns: string, op: string, args?: Record<string, unknown>): Promise<T> {
+    const command = `engine_${toSnakeCase(ns)}_${toSnakeCase(op)}`;
     try {
-      return (await invoke(`engine_${ns}_${op}`, args)) as T;
+      return (await invoke(command, args)) as T;
     } catch (err) {
-      throw unwrapError(err, `engine_${ns}_${op}`);
+      throw unwrapError(err, command);
     }
+  }
+
+  function toSnakeCase(value: string): string {
+    return value.replace(/[A-Z]/g, (character) => `_${character.toLowerCase()}`);
   }
 
   function unwrapError(err: unknown, command: string): EngineError {
@@ -64,6 +73,9 @@ export function createDesktopClient(options: DesktopClientOptions): EngineClient
     transport: 'desktop',
 
     auth: {
+      bootstrapStatus: () => call('auth', 'bootstrapStatus'),
+      bootstrap: (schoolName, username, displayName, password) =>
+        call('auth', 'bootstrap', { schoolName, username, displayName, password }),
       login: (schoolId, username, password, kind) =>
         call('auth', 'login', { schoolId, username, password, kind }),
       authenticate: (token) => call('auth', 'authenticate', { token }),
@@ -203,10 +215,85 @@ export function createDesktopClient(options: DesktopClientOptions): EngineClient
         'desktop client built without `listen` — the shell must inject engine event forwarding (see packages/engine-sdk/README.md)',
       );
     }
-    // The shell's listener receives the cursor so it can replay history
-    // (engine EventBus::subscribe_since) before going live.
-    void lastEventId;
-    return options.listen((e) => cb(e as EngineEventLike)) as EventUnsubscribe;
+    if (!lastEventId) {
+      return attachListener((event) => cb(event));
+    }
+
+    // Attach live first, buffer while history loads, then emit both streams
+    // in UUIDv7 order with id de-duplication. This closes the race between
+    // fetching history and subscribing to Tauri's live event channel.
+    let replaying = true;
+    let cancelled = false;
+    const buffered: EngineEventLike[] = [];
+    const unsubscribe = attachListener(
+      (event) => {
+        if (replaying) buffered.push(event);
+        else cb(event);
+      },
+      () => {
+        // Fetch history only after the live listener is registered. Events
+        // arriving after registration are buffered, closing both sides of
+        // the replay/live hand-off race.
+        void call<EngineEventLike[]>('events', 'recent', { limit: 1000 })
+          .then((recent) => {
+            if (cancelled) return;
+            const seen = new Set<string>();
+            const missed = [...recent, ...buffered]
+              .filter((event) => event.id > lastEventId)
+              .sort((left, right) => left.id.localeCompare(right.id));
+            for (const event of missed) {
+              if (!seen.has(event.id)) {
+                seen.add(event.id);
+                cb(event);
+              }
+            }
+          })
+          .catch((error) => options.onListenError?.(error))
+          .finally(() => {
+            replaying = false;
+          });
+      },
+    );
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }
+
+  /**
+   * Normalize Tauri's asynchronous `listen()` registration into the SDK's
+   * synchronous cancellation handle. Cancellation before registration
+   * completes is remembered and applied as soon as the unlisten function is
+   * available, so navigation cannot leak listeners.
+   */
+  function attachListener(
+    onEvent: (event: EngineEventLike) => void,
+    onReady?: () => void,
+  ): EventUnsubscribe {
+    if (!options.listen) {
+      throw new EngineError(
+        'not_implemented_in_scaffold',
+        'desktop client built without `listen` — inject Tauri engine-event forwarding',
+      );
+    }
+
+    let cancelled = false;
+    let unlisten: EventUnsubscribe | undefined;
+    Promise.resolve(options.listen(onEvent)).then(
+      (registeredUnlisten) => {
+        if (cancelled) registeredUnlisten();
+        else {
+          unlisten = registeredUnlisten;
+          onReady?.();
+        }
+      },
+      (error) => options.onListenError?.(error),
+    );
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      unlisten = undefined;
+    };
   }
 
   return client;

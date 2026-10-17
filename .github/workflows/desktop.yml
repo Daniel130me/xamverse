@@ -1,18 +1,17 @@
-# Desktop shell build (scaffold preview).
-#
-# NOTE(scaffold): the src-tauri shell is a SCAFFOLD (see PHASE2_COMPLETION_REPORT
-# §5.3): it builds a real windowed app but the engine embedding, frontend
-# bundle and installers are Phase 3 work. This workflow is therefore
-# workflow_dispatch-only and non-blocking (continue-on-error) until the shell
-# ships — it exists so the bundling pipeline is proven BEFORE it gates.
-#
-# Bundling (.msi/.dmg) and code signing are documented in
-# docs/phase2/UPDATES_AND_INSTALLERS.md §7; enable them here when the shell
-# is production-ready.
-
 name: desktop
 
 on:
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - "crates/**"
+      - "packages/engine-sdk/**"
+      - "src/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/desktop.yml"
+  push:
+    branches: [main, feat/desktopz]
   workflow_dispatch:
 
 concurrency:
@@ -20,17 +19,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-shell:
+  build-installers:
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            bundle: msi
           - os: macos-latest
             target: aarch64-apple-darwin
+            bundle: dmg
     runs-on: ${{ matrix.os }}
-    continue-on-error: true # scaffold preview — becomes a hard gate in Phase 3
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -40,7 +40,14 @@ jobs:
         with:
           workspaces: src-tauri
       - uses: oven-sh/setup-bun@v2
-      - name: Build the shell (no bundle — installers are Phase 3)
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+      - name: Build installer
         working-directory: src-tauri
-        run: |
-          bun x @tauri-apps/cli build --no-bundle --target ${{ matrix.target }}
+        run: bun x @tauri-apps/cli build --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: xamverse-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/**
+          if-no-files-found: error

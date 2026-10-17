@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { createBrowserClient } from './browser.js';
-import { createDesktopClient } from './desktop.js';
+import { createDesktopClient, type EngineEventLike } from './desktop.js';
 import { createMockClient } from './mock.js';
 import { createEngineClient, EngineError, normalizeError } from './index.js';
 
@@ -109,6 +109,8 @@ describe('browser adapter — real bridge routes', () => {
     expect((err as EngineError).code).toBe('unsupported_on_browser_adapter');
     const err2 = await client.attempts.startAttempt('s1', 'p', 'stu').catch((e: EngineError) => e);
     expect((err2 as EngineError).code).toBe('unsupported_on_browser_adapter');
+    const bootstrapError = await client.auth.bootstrapStatus().catch((e: EngineError) => e);
+    expect((bootstrapError as EngineError).code).toBe('unsupported_on_browser_adapter');
   });
 
   it('normalizes bridge errors (string shape + status) into the catalogue', async () => {
@@ -129,6 +131,35 @@ describe('browser adapter — real bridge routes', () => {
     expect(err.code).toBe('permission_denied');
     expect(err.permission).toBe('sync.collect');
   });
+
+  it('delivers default SSE messages and carries a cold-start replay cursor', () => {
+    const urls: string[] = [];
+    const sources: Array<{ onmessage: ((event: MessageEvent<string>) => void) | null }> = [];
+    class FakeEventSource {
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+
+      constructor(url: string | URL) {
+        urls.push(String(url));
+        sources.push(this);
+      }
+
+      close() {}
+    }
+
+    const client = createBrowserClient({
+      baseUrl: 'http://bridge.test:47811',
+      EventSource: FakeEventSource as unknown as typeof EventSource,
+    });
+    const seen: string[] = [];
+    const unsubscribe = client.events.subscribeSince('018f-event-cursor', (event) => seen.push(event.id));
+
+    expect(new URL(urls[0] ?? '').searchParams.get('last_event_id')).toBe('018f-event-cursor');
+    sources[0]?.onmessage?.({
+      data: JSON.stringify({ id: 'next', at: '', type: 'sync_completed', data: {} }),
+    } as MessageEvent<string>);
+    expect(seen).toEqual(['next']);
+    unsubscribe();
+  });
 });
 
 describe('desktop adapter', () => {
@@ -138,11 +169,45 @@ describe('desktop adapter', () => {
       invoke: async (cmd, args) => {
         seen.push({ cmd, args });
         if (cmd === 'engine_peers_fingerprint') return 'XV-TEST-TEST-TEST-TEST';
+        if (cmd === 'engine_peers_add_manual_peer') return { key: 'm1', addr: '10.0.0.2:47810' };
         return { ok: true };
       },
     });
     await expect(client.peers.fingerprint()).resolves.toBe('XV-TEST-TEST-TEST-TEST');
+    await expect(client.peers.addManualPeer('10.0.0.2')).resolves.toEqual({
+      key: 'm1',
+      addr: '10.0.0.2:47810',
+    });
     expect(seen[0]?.cmd).toBe('engine_peers_fingerprint');
+    expect(seen[1]).toEqual({
+      cmd: 'engine_peers_add_manual_peer',
+      args: { ip: '10.0.0.2', port: undefined },
+    });
+  });
+
+  it('exposes the local-only first-owner bootstrap commands', async () => {
+    const seen: { cmd: string; args: Record<string, unknown> | undefined }[] = [];
+    const client = createDesktopClient({
+      invoke: async (cmd, args) => {
+        seen.push({ cmd, args });
+        return cmd === 'engine_auth_bootstrap_status' ? { required: true } : {};
+      },
+    });
+
+    await expect(client.auth.bootstrapStatus()).resolves.toEqual({ required: true });
+    await client.auth.bootstrap('North School', 'owner', 'Ada Owner', 'strong-pass-1');
+    expect(seen).toEqual([
+      { cmd: 'engine_auth_bootstrap_status', args: undefined },
+      {
+        cmd: 'engine_auth_bootstrap',
+        args: {
+          schoolName: 'North School',
+          username: 'owner',
+          displayName: 'Ada Owner',
+          password: 'strong-pass-1',
+        },
+      },
+    ]);
   });
 
   it('unwraps the engine error envelope from the rejected command', async () => {
@@ -159,6 +224,42 @@ describe('desktop adapter', () => {
   it('fails loudly when the shell did not inject event listening', () => {
     const client = createDesktopClient({ invoke: async () => ({}) });
     expect(() => client.events.subscribe(() => {})).toThrow(/listen/);
+  });
+
+  it('replays desktop events without losing events emitted during history loading', async () => {
+    let live: ((event: EngineEventLike) => void) | undefined;
+    let resolveRecent: ((events: unknown[]) => void) | undefined;
+    const recent = new Promise<unknown[]>((resolve) => { resolveRecent = resolve; });
+    const client = createDesktopClient({
+      invoke: async (cmd) => cmd === 'engine_events_recent' ? recent : {},
+      listen: (onEvent) => {
+        live = onEvent;
+        return () => { live = undefined; };
+      },
+    });
+    const seen: string[] = [];
+    const stop = client.events.subscribeSince('001', (event) => seen.push(event.id));
+    const event = (id: string) => ({ id, at: '', school_id: null, device_id: null, type: 'sync_completed', data: {} });
+    live?.(event('003'));
+    await vi.waitFor(() => expect(resolveRecent).toBeDefined());
+    resolveRecent?.([event('002'), event('003')]);
+    await vi.waitFor(() => expect(seen).toEqual(['002', '003']));
+    stop();
+  });
+
+  it('cancels a Tauri listener even when registration resolves asynchronously', async () => {
+    let resolveUnlisten: ((unlisten: () => void) => void) | undefined;
+    let unlistened = false;
+    const client = createDesktopClient({
+      invoke: async () => ({}),
+      listen: () => new Promise((resolve) => { resolveUnlisten = resolve; }),
+    });
+
+    const stop = client.events.subscribe(() => {});
+    stop();
+    resolveUnlisten?.(() => { unlistened = true; });
+
+    await vi.waitFor(() => expect(unlistened).toBe(true));
   });
 });
 

@@ -23,6 +23,16 @@ import { ScreenRouter } from '@/components/prototype/screens/ScreenRouter';
 import { WalkthroughDrawer } from '@/components/prototype/screens/Walkthrough';
 import { GraduationCap } from 'lucide-react';
 
+const subscribeToClientMount = () => () => {};
+
+/**
+ * Keep the server snapshot stable during hydration, then expose the browser
+ * snapshot without an effect-driven state update.
+ */
+function useClientMounted() {
+  return React.useSyncExternalStore(subscribeToClientMount, () => true, () => false);
+}
+
 export default function Home() {
   const store = useDemoStore();
   const route = store.route;
@@ -33,8 +43,7 @@ export default function Home() {
   // timestamps, so server-rendered content can never match the client's first
   // render (e.g. "17 hrs ago" vs "18 hrs ago"). Render a neutral shell on the
   // server and mount the real UI only on the client.
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
+  const mounted = useClientMounted();
 
   // debug/demo hook (also documented in README for support engineers)
   React.useEffect(() => {

@@ -43,6 +43,8 @@ export function createMockClient(options: MockClientOptions = {}): EngineClient 
     transport: 'mock',
 
     auth: {
+      bootstrapStatus: async () => ({ required: false }),
+      bootstrap: async () => unsupported('auth.bootstrap'),
       async login(schoolId, username, _password, kind) {
         session = {
           token_hash: 'mock-token',

@@ -11,12 +11,12 @@ numbers from real runs; no claimed-but-unexecuted tests).
 
 ## 1. Rust — the engine workspace
 
-All tests are `#[cfg(test)]` modules inside the crates (there are no
-separate `tests/` directories yet); `cargo test --workspace` runs everything
-including doc-tests (which currently contain no examples — 0 doc-tests).
+Most unit tests are `#[cfg(test)]` modules inside their crates. The dedicated
+`tests/integration` workspace member adds four cross-engine tests (A–D);
+`cargo test --workspace` runs both layers plus doc-tests.
 
 ```bash
-cargo test --workspace                  # everything, 76 tests
+cargo test --workspace                  # everything, 80 tests
 cargo test -p xamverse-sync             # one crate (replication core)
 cargo test -p xamverse-security -- --nocapture   # watch auth flows
 cargo test --workspace --release        # SQLCipher-heavy suites are faster here
@@ -55,11 +55,9 @@ cargo test -p xamverse-licensing licence_copying_to_another_device_fails
 cargo test -p xamverse-updater forged_manifest_is_refused
 ```
 
-Note on the "integration Tests A–J" referenced by ADRs/ARCHITECTURE: the
-per-crate suites above are the current realization; dedicated multi-node
-integration binaries are **not yet present** in the tree (see
-`KNOWN_LIMITATIONS.md`) — cross-node behaviour is covered by the CLI demo in
-§4 and the network tests using real TCP sockets.
+Note on the "integration Tests A–J" referenced by ADRs/ARCHITECTURE:
+`tests/integration` currently implements A–D over real TCP with independent
+engine instances. E–J remain open and are tracked in `KNOWN_LIMITATIONS.md`.
 
 ## 2. TypeScript — prototype suite and type gates
 

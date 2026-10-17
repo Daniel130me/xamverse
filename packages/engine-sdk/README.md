@@ -6,7 +6,7 @@ TypeScript client for the XamVerse desktop engine. The contract is
 
 | Adapter | Surface | Status |
 |---|---|---|
-| `createDesktopClient({ invoke, listen })` | full engine surface via Tauri commands (`engine_<ns>_<op>`) | typed, wired — **commands exist once the src-tauri shell implements them (Phase 3)** |
+| `createDesktopClient({ invoke, listen })` | full engine surface via Tauri commands (`engine_<ns>_<op>`) | **working** against the embedded `src-tauri` engine |
 | `createBrowserClient({ baseUrl })` | LAN bridge routes only (auth, me, diagnostics, sync queue, SSE) | **working today** against `xamverse-web` on port 47811 |
 | `createMockClient()` | boot surface for vitest/storybook | scaffold scope (auth + diagnostics + scripted events) |
 
@@ -20,6 +20,11 @@ const { session } = await client.auth.login('s1', 'd.ibrahim', 'pw', 'browser');
 client.permissions.require(session, 'sync.read');
 const status = await client.diagnostics();
 ```
+
+On a fresh desktop installation, call `auth.bootstrapStatus()` and, only when
+required, `auth.bootstrap(...)`. Bootstrap is local-desktop-only, atomically
+creates the first school and owner, signs that owner in, and becomes
+permanently unavailable once a school exists.
 
 Inside the Tauri shell, inject the runtime instead of relying on auto-detect:
 
@@ -48,13 +53,14 @@ const client = createDesktopClient({
    string form) normalize into `EngineError` with a stable `code`
    (catalogue: `ENGINE_API.md` §2).
 
-## Scaffold status
+## Adapter notes
 
 Marked limitations are explicit, not silent:
-- `subscribeSince` on the browser adapter warns: the bridge does not accept a
-  cold-start replay cursor yet (`BROWSER_ACCESS.md` §6 tracks it).
-- The mock adapter covers only the boot surface; the full in-memory engine
-  simulation lands with Phase 3.
+- Browser `subscribeSince` sends a `last_event_id` replay cursor; native
+  EventSource reconnects continue to use the standard `Last-Event-ID` header.
+- The mock adapter deliberately covers only the boot surface. Integration
+  tests that need real authorization, persistence, or replication should run
+  against the Rust engine instead of duplicating those rules in TypeScript.
 - `sync.jobs` asserts `schoolId` is non-empty but the bridge scopes by
   session school — the parameter exists to keep call sites transport-agnostic.
 

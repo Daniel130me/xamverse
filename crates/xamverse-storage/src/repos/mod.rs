@@ -135,6 +135,15 @@ impl SchoolsRepo {
         Ok(stmt.exists([school_id])?)
     }
 
+    /// Constant-size initialization check; avoids loading every school row.
+    pub fn has_any(conn: &Connection) -> StorageResult<bool> {
+        let present: bool =
+            conn.query_row("SELECT EXISTS(SELECT 1 FROM schools LIMIT 1)", [], |row| {
+                row.get(0)
+            })?;
+        Ok(present)
+    }
+
     pub fn list(conn: &Connection) -> StorageResult<Vec<SchoolRow>> {
         let mut stmt = conn.prepare_cached(
             "SELECT school_id, name, settings_json, enrolled_at FROM schools ORDER BY enrolled_at",

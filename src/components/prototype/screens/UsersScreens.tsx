@@ -205,18 +205,20 @@ export function RolesScreen() {
   const store = useDemoStore();
   const [selectedId, setSelectedId] = React.useState('role-teacher');
   const roles = store.world.roleDefinitions;
-  const role = roles.find((r) => r.id === selectedId)!;
-  const [perms, setPerms] = React.useState<PermissionKey[]>(role.permissions);
+  const [customRoles, setCustomRoles] = React.useState<RoleDefinition[]>([]);
+  const allRoles = [...roles, ...customRoles];
+  const role = allRoles.find((candidate) => candidate.id === selectedId) ?? allRoles[0];
+  const [perms, setPerms] = React.useState<PermissionKey[]>(role?.permissions ?? []);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [newName, setNewName] = React.useState('');
   const [newPerms, setNewPerms] = React.useState<PermissionKey[]>([]);
-  const [customRoles, setCustomRoles] = React.useState<RoleDefinition[]>([]);
 
-  React.useEffect(() => {
-    setPerms(role.permissions);
-  }, [selectedId]);
+  if (!role) return null;
 
-  const allRoles = [...roles, ...customRoles];
+  const selectRole = (next: RoleDefinition) => {
+    setSelectedId(next.id);
+    setPerms(next.permissions);
+  };
   const toggle = (p: PermissionKey) => setPerms((ps) => ps.includes(p) ? ps.filter((x) => x !== p) : [...ps, p]);
 
   return (
@@ -231,7 +233,7 @@ export function RolesScreen() {
         <SectionCard title="Roles">
           <div className="space-y-1.5">
             {allRoles.map((r) => (
-              <button key={r.id} onClick={() => setSelectedId(r.id)} className={`w-full rounded-lg border p-2.5 text-left transition-colors ${selectedId === r.id ? 'border-primary ring-1 ring-primary/20' : 'hover:bg-accent'}`}>
+              <button key={r.id} onClick={() => selectRole(r)} className={`w-full rounded-lg border p-2.5 text-left transition-colors ${selectedId === r.id ? 'border-primary ring-1 ring-primary/20' : 'hover:bg-accent'}`}>
                 <p className="flex items-center justify-between text-sm font-medium">{r.name} {r.system && <Badge variant="outline" className="text-[9px]">system</Badge>}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{r.memberCount} member(s) · {r.permissions.length} perms</p>
               </button>
@@ -288,7 +290,7 @@ export function RolesScreen() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={() => { if (newName.trim()) { const r: RoleDefinition = { id: `role-custom-${Date.now()}`, name: newName.trim(), description: 'Custom role created by administrator', system: false, permissions: newPerms, memberCount: 0 }; setCustomRoles((cs) => [...cs, r]); setSelectedId(r.id); setCreateOpen(false); setNewName(''); setNewPerms([]); toast.success(`Role "${r.name}" created`); } }}>Create role</Button>
+            <Button onClick={() => { if (newName.trim()) { const r: RoleDefinition = { id: `role-custom-${Date.now()}`, name: newName.trim(), description: 'Custom role created by administrator', system: false, permissions: newPerms, memberCount: 0 }; setCustomRoles((cs) => [...cs, r]); selectRole(r); setCreateOpen(false); setNewName(''); setNewPerms([]); toast.success(`Role "${r.name}" created`); } }}>Create role</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -621,7 +621,12 @@ export function AssessmentDetailScreen() {
       </Dialog>
 
       {/* edit dialog */}
-      <EditRevisionDialog open={editOpen} onOpenChange={setEditOpen} assessment={a} />
+      <EditRevisionDialog
+        key={editOpen ? `${a.id}:${a.version}` : 'closed'}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        assessment={a}
+      />
     </div>
   );
 }
@@ -634,9 +639,6 @@ function EditRevisionDialog({ open, onOpenChange, assessment }: { open: boolean;
   const store = useDemoStore();
   const [name, setName] = React.useState(assessment.name);
   const [instructions, setInstructions] = React.useState(assessment.instructions);
-  React.useEffect(() => {
-    if (open) { setName(assessment.name); setInstructions(assessment.instructions); }
-  }, [open, assessment]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>

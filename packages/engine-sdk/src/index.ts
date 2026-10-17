@@ -42,7 +42,11 @@ export function createEngineClient(options?: Partial<AutoDetectOptions>): Engine
     (globals.__TAURI_INTERNALS__ as { invoke?: TauriInvoke } | undefined)?.invoke ??
     globals.__TAURI__?.invoke;
   if (invoke) {
-    return createDesktopClient({ invoke, listen: options?.listen } as DesktopClientOptions);
+    return createDesktopClient({
+      invoke,
+      listen: options?.listen,
+      onListenError: options?.onListenError,
+    } as DesktopClientOptions);
   }
   return createBrowserClient(options ?? {});
 }

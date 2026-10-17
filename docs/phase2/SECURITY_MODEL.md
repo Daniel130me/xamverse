@@ -73,6 +73,7 @@ test asserts the hex never appears in formatted output.
 | Browser session TTL | 2 h | `BROWSER_SESSION_TTL` (mirrored in `xamverse-web`) |
 | Sensitive-operation window | reauthentication required if session older than 5 min (`require_fresh`) | `SENSITIVE_MAX_AGE` |
 | Password change | verifies old password, revokes **all** the user's sessions on the node, bumps user revision so it can replicate | `change_password` |
+| Initial owner bootstrap | desktop-local only, one transaction, disabled once any school exists, 12-character minimum | `Engine::bootstrap_installation` |
 | Post-login suspension | `authenticate()` re-reads the user row; a suspended user is logged out immediately on this node | `authenticate()` |
 | Permission checks | resolved from the live role tables on every check; denial audited (`authz.denied`) | `xamverse-security/src/rbac.rs` |
 
@@ -235,10 +236,11 @@ means OS administrator.
   passphrase-encrypted (Argon2id 64 MiB + XChaCha20-Poly1305) so a stolen
   `.xvbk` without the passphrase is useless **even if** the DB key leaked;
   session tokens stored only as SHA-256.
-* **Residual risk:** with the default `FileKeyStore`, the DB key sits in
+* **Residual risk:** on headless deployments using `FileKeyStore`, the DB key sits in
   `data_dir/database_key.key` (0600, directory 0700) — **same-disk key + DB
-  defeats at-rest encryption for an OS administrator** (see §6). Production
-  desktop builds must inject the OS-keychain implementation.
+  defeats at-rest encryption for an OS administrator** (see §6). The Tauri
+  desktop runtime injects `PlatformKeyStore` (Windows Credential Manager or
+  macOS Keychain); it does not use this fallback.
 * **Test:** `wrong_key_is_detected_not_silent`; backup
   `wrong_passphrase_is_refused_safely`.
 
@@ -246,8 +248,9 @@ means OS administrator.
 
 * **Assets:** device private keys, DB key. Boundary T0 broken.
 * **Mitigation:** keys are 32-byte CSPRNG values in the keystore; seeds
-  zeroized on drop; key material redacted in Debug; the Tauri shell should
-  use DPAPI/Keychain (per-user binding) so another OS user cannot read them.
+  zeroized on drop; key material redacted in Debug; the Tauri shell uses the
+  operating-system credential store (per-user binding) so another OS user
+  cannot read them.
 * **Residual risk:** against an OS administrator with the process running,
   memory inspection wins — true of every desktop engine; documented, not
   hidden. Forensics (audit chain, op signatures) still proves *what*
@@ -375,10 +378,10 @@ the damage window (12 h desktop / 2 h browser). Schools should treat
 residual risk` in code: the fallback key file lives on the same disk as the
 database with `0600` permissions (directory `0700`). This protects the key
 from other *users* on the machine but **not** from a local administrator or
-full-disk access. Production desktop builds should inject an OS-keychain
-implementation of `SecureKeyStore` (DPAPI on Windows, Keychain on macOS).
-The fallback exists so headless nodes (labs, CI, Linux) remain fully
-functional; it is never silently preferred where a keychain is available.
+full-disk access. The production desktop shell injects an OS credential-store
+implementation of `SecureKeyStore` (Windows Credential Manager or macOS
+Keychain). The fallback exists so headless nodes (labs, CI, Linux) remain
+fully functional; it is never silently preferred by the desktop runtime.
 
 ## 7. Not unhackable — explicit limitations
 

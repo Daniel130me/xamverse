@@ -84,6 +84,8 @@ export function createBrowserClient(options: BrowserClientOptions = {}): EngineC
     transport: 'browser',
 
     auth: {
+      bootstrapStatus: async () => unsupported('auth.bootstrapStatus'),
+      bootstrap: async () => unsupported('auth.bootstrap'),
       async login(schoolId, username, password) {
         // 200 sets the http-only session cookie; the bridge returns {ok:true}.
         await request<{ ok: true }>('POST', '/api/v1/auth/login', {
@@ -242,16 +244,12 @@ function openSse(
   if (!EventSourceImpl) {
     throw new EngineError('network', 'EventSource is not available in this environment');
   }
-  const source = new EventSourceImpl(url, { withCredentials: true });
-  // Reconnect recovery: the browser sends Last-Event-ID automatically for
-  // native reconnections; for a cold start we inject the header-equivalent
-  // query the bridge accepts once it supports subscribeSince (tracked in
-  // BROWSER_ACCESS.md §6).
-  if (opts.lastEventId) {
-    // NOTE(non-standard): bridge does not accept an explicit replay cursor on
-    // cold start yet — documented gap, not silently dropped.
-    console.warn('[engine-sdk] subscribeSince: bridge replay on cold start is not implemented yet');
-  }
+  // Native reconnects send Last-Event-ID automatically. A cold connection
+  // cannot set that header through EventSource, so the bridge also accepts an
+  // equivalent query parameter.
+  const eventUrl = new URL(url, globalThis.location?.origin ?? 'http://localhost');
+  if (opts.lastEventId) eventUrl.searchParams.set('last_event_id', opts.lastEventId);
+  const source = new EventSourceImpl(eventUrl.toString(), { withCredentials: true });
   source.onmessage = (ev: MessageEvent<string>) => {
     try {
       onEvent(JSON.parse(ev.data) as EngineEvent);

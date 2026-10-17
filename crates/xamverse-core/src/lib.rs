@@ -35,9 +35,22 @@ use xamverse_licensing::{LicenceConfig, LicenceService};
 use xamverse_network::{PeerServer, TrustDecision};
 use xamverse_security::{AuthConfig, AuthService, Authz};
 use xamverse_storage::repos::TrustState;
-use xamverse_storage::{Database, DatabaseKey, FileKeyStore, SecureKeyStore as _};
+use xamverse_storage::{Database, DatabaseKey, FileKeyStore, SecureKeyStore};
 use xamverse_sync::{AttemptStore, ConflictService, PackageStore, SyncEngine};
 use xamverse_updater::{UpdateConfig, UpdaterService};
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PeerPing {
+    pub rtt_ms: u64,
+    pub device_id: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BootstrapIdentity {
+    pub school_id: String,
+    pub user_id: String,
+    pub username: String,
+}
 
 /// Keystore entry names (one DB key per installation).
 const DB_KEY_NAME: &str = "database_key";
@@ -68,6 +81,19 @@ pub struct Engine {
 impl Engine {
     /// Initialize (idempotent across restarts; single-instance enforced).
     pub fn init(config: EngineConfig) -> Result<Arc<Self>, EngineError> {
+        let keystore = Arc::new(FileKeyStore::new(&config.data_dir)?);
+        Self::init_with_keystore(config, keystore)
+    }
+
+    /// Initialize with a platform-provided secure keystore.
+    ///
+    /// Desktop hosts use this entry point to keep database and identity keys
+    /// in Windows Credential Manager or macOS Keychain. Headless/Linux hosts
+    /// intentionally retain [`Self::init`]'s permission-restricted file store.
+    pub fn init_with_keystore(
+        config: EngineConfig,
+        keystore: Arc<dyn SecureKeyStore>,
+    ) -> Result<Arc<Self>, EngineError> {
         std::fs::create_dir_all(&config.data_dir)?;
 
         // Single-instance protection via an exclusive lock held for the
@@ -83,7 +109,6 @@ impl Engine {
         })?;
 
         // Keystore → database key → encrypted database.
-        let keystore = FileKeyStore::new(&config.data_dir)?;
         let db_key_bytes = keystore.get_or_create(DB_KEY_NAME, 32)?;
         let db_key =
             DatabaseKey::from_hex(&xamverse_storage::keystore::bytes_to_hex(&db_key_bytes))?;
@@ -92,7 +117,7 @@ impl Engine {
 
         // Identity from the same keystore.
         let identity = Arc::new(DeviceIdentity::load_or_create(
-            &keystore,
+            keystore.as_ref(),
             &config.device_name,
             current_platform(),
         )?);
@@ -276,17 +301,119 @@ impl Engine {
         Ok(())
     }
 
+    /// Whether this installation still needs its one-time local bootstrap.
+    pub fn bootstrap_required(&self) -> Result<bool, EngineError> {
+        Ok(!xamverse_storage::repos::SchoolsRepo::has_any(
+            &self.db.lock(),
+        )?)
+    }
+
+    /// Atomically create the first school and owner credential.
+    ///
+    /// This is intentionally a local composition-root primitive and is never
+    /// exposed by the LAN browser bridge. The transaction refuses to run once
+    /// any school exists, preventing an unauthenticated second-owner path.
+    pub fn bootstrap_installation(
+        &self,
+        school_name: &str,
+        username: &str,
+        display_name: &str,
+        password: &str,
+    ) -> Result<BootstrapIdentity, EngineError> {
+        let school_name = validated_bootstrap_text("school name", school_name, 2, 120)?;
+        let username = validated_bootstrap_text("username", username, 3, 80)?;
+        if !username
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
+        {
+            return Err(xamverse_storage::StorageError::InvalidValue {
+                field: "username",
+                reason: "may contain only letters, numbers, dots, underscores, and hyphens".into(),
+            }
+            .into());
+        }
+        let display_name = validated_bootstrap_text("display name", display_name, 2, 120)?;
+        if !(12..=1024).contains(&password.chars().count()) {
+            return Err(xamverse_storage::StorageError::InvalidValue {
+                field: "password",
+                reason: "must contain between 12 and 1024 characters".into(),
+            }
+            .into());
+        }
+        let auth_hash = xamverse_security::hash_password(password)?;
+        let school_id = format!("school-{}", uuid::Uuid::now_v7());
+        let user_id = format!("user-{}", uuid::Uuid::now_v7());
+
+        self.db.tx(|conn| {
+            if xamverse_storage::repos::SchoolsRepo::has_any(conn)? {
+                return Err(xamverse_storage::StorageError::InvalidValue {
+                    field: "installation bootstrap",
+                    reason: "an enrolled school already exists".into(),
+                });
+            }
+            xamverse_storage::repos::SchoolsRepo::enroll(conn, &school_id, &school_name)?;
+            xamverse_security::seed_builtin_roles(conn, &school_id)?;
+            xamverse_storage::repos::UsersRepo::upsert(
+                conn,
+                &xamverse_storage::repos::UserRow {
+                    user_id: user_id.clone(),
+                    school_id: school_id.clone(),
+                    username: username.clone(),
+                    display_name,
+                    status: "active".into(),
+                    auth_hash: Some(auth_hash),
+                    origin_device_id: Some(self.identity.device_id.clone()),
+                    revision: 1,
+                    updated_at: xamverse_storage::now_rfc3339(),
+                },
+            )?;
+            let owner_role =
+                xamverse_storage::repos::UsersRepo::find_role_by_name(conn, &school_id, "owner")?
+                    .ok_or_else(|| xamverse_storage::StorageError::NotFound {
+                    entity: "role",
+                    id: "owner".into(),
+                })?;
+            xamverse_storage::repos::UsersRepo::grant_role(
+                conn,
+                &school_id,
+                &user_id,
+                &owner_role.role_id,
+                Some(&user_id),
+            )?;
+            xamverse_audit::record(
+                conn,
+                &xamverse_audit::AuditEvent::new("school.bootstrapped")
+                    .with_school(&school_id)
+                    .with_actor(&user_id, &self.identity.device_id)
+                    .with_target(&school_name),
+            )?;
+            Ok(())
+        })?;
+
+        Ok(BootstrapIdentity {
+            school_id,
+            user_id,
+            username,
+        })
+    }
+
     /// Peer diagnostics: connect to a node and time the round trip.
     pub async fn ping_peer(
         &self,
         addr: std::net::SocketAddr,
     ) -> Result<std::time::Duration, EngineError> {
+        let ping = self.probe_peer(addr).await?;
+        Ok(std::time::Duration::from_millis(ping.rtt_ms))
+    }
+
+    /// Ping with the verified remote identity for desktop/API diagnostics.
+    pub async fn probe_peer(&self, addr: std::net::SocketAddr) -> Result<PeerPing, EngineError> {
         let started = std::time::Instant::now();
         let mut conn =
             xamverse_network::PeerClient::connect(addr, &self.identity, &self.sync.trust_policy())
                 .await?;
-        self.sync
-            .record_peer_address(&conn.peer.card.device_id, addr);
+        let device_id = conn.peer.card.device_id.clone();
+        self.sync.record_peer_address(&device_id, addr);
         let reply = conn
             .request(xamverse_network::Envelope::new(
                 "ping",
@@ -300,7 +427,10 @@ impl Engine {
             )));
         }
         conn.channel.goodbye().await;
-        Ok(started.elapsed())
+        Ok(PeerPing {
+            rtt_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+            device_id,
+        })
     }
 
     pub fn platform(&self) -> &'static str {
@@ -315,6 +445,67 @@ impl Engine {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
+
+    /// Snapshot peers discovered through mDNS. Returns an empty list when
+    /// multicast discovery is disabled or unavailable; manual peers remain
+    /// available through [`Self::manual_peers`].
+    pub async fn discovered_peers(&self) -> Vec<xamverse_discovery::PeerAdvertisement> {
+        self.discovery
+            .lock()
+            .await
+            .as_ref()
+            .map(xamverse_discovery::Discovery::known)
+            .unwrap_or_default()
+    }
+
+    /// Pull replicated objects from a known peer through the engine's
+    /// per-peer connection limiter and verified Noise channel.
+    pub async fn pull_from_peer(
+        &self,
+        peer_device_id: &str,
+        school_id: &str,
+        categories: Vec<String>,
+    ) -> Result<xamverse_sync::PullSummary, EngineError> {
+        let school_id = school_id.to_string();
+        let sync = self.sync.clone();
+        let summary = self
+            .sync
+            .with_peer_connection(peer_device_id, None, move |mut connection| {
+                Box::pin(async move {
+                    let summary = sync
+                        .pull_from(&mut connection, &school_id, &categories)
+                        .await?;
+                    connection.channel.goodbye().await;
+                    Ok(summary)
+                })
+            })
+            .await?;
+        Ok(summary)
+    }
+}
+
+fn validated_bootstrap_text(
+    field: &'static str,
+    value: &str,
+    min_len: usize,
+    max_len: usize,
+) -> Result<String, EngineError> {
+    let value = value.trim();
+    if !(min_len..=max_len).contains(&value.chars().count()) {
+        return Err(xamverse_storage::StorageError::InvalidValue {
+            field,
+            reason: format!("must contain between {min_len} and {max_len} characters"),
+        }
+        .into());
+    }
+    if value.chars().any(char::is_control) {
+        return Err(xamverse_storage::StorageError::InvalidValue {
+            field,
+            reason: "must not contain control characters".into(),
+        }
+        .into());
+    }
+    Ok(value.to_string())
 }
 
 impl Drop for Engine {
@@ -373,6 +564,65 @@ mod tests {
             ..Default::default()
         });
         assert!(matches!(again, Err(EngineError::AlreadyRunning { .. })));
+    }
+
+    #[test]
+    fn injected_keystore_is_the_engine_identity_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let keystore = Arc::new(xamverse_storage::MemoryKeyStore::default());
+        let expected_id = DeviceIdentity::load_or_create(keystore.as_ref(), "expected", "test")
+            .unwrap()
+            .device_id;
+        let engine = Engine::init_with_keystore(
+            EngineConfig {
+                data_dir: dir.path().join("data"),
+                device_name: "Desktop".into(),
+                enable_mdns: false,
+                ..Default::default()
+            },
+            keystore,
+        )
+        .unwrap();
+
+        assert_eq!(engine.identity.device_id, expected_id);
+    }
+
+    #[test]
+    fn bootstrap_creates_one_owner_and_cannot_run_twice() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::init(EngineConfig {
+            data_dir: dir.path().join("data"),
+            enable_mdns: false,
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert!(engine.bootstrap_required().unwrap());
+        assert!(engine
+            .bootstrap_installation("North School", "principal", "Ada Owner", "too-short")
+            .is_err());
+        assert!(engine.bootstrap_required().unwrap());
+        let owner = engine
+            .bootstrap_installation("North School", "principal", "Ada Owner", "strong-pass-1")
+            .unwrap();
+        assert!(!engine.bootstrap_required().unwrap());
+        let (_, session) = engine
+            .auth
+            .login(
+                &owner.school_id,
+                &owner.username,
+                "strong-pass-1",
+                xamverse_security::SessionKind::Desktop,
+                None,
+                Some(&engine.identity.device_id),
+            )
+            .unwrap();
+        assert!(session
+            .permissions
+            .contains(&xamverse_security::reserved::USERS_MANAGE.into()));
+        assert!(engine
+            .bootstrap_installation("Second", "other", "Other Owner", "strong-pass-2")
+            .is_err());
     }
 
     #[tokio::test]

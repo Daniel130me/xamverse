@@ -9,11 +9,13 @@ import type {
   ActivationRequest,
   AttemptRow,
   AuditRow,
+  BootstrapIdentity,
   ConflictRow,
   EngineEvent,
   EngineStatus,
   JobRow,
   LicenceStatus,
+  ManualPeerEntry,
   PackageManifest,
   PairPending,
   PeerAdvertisement,
@@ -30,6 +32,13 @@ export interface EngineClient {
   readonly transport: 'desktop' | 'browser' | 'mock';
 
   auth: {
+    bootstrapStatus(): Promise<{ required: boolean }>;
+    bootstrap(
+      schoolName: string,
+      username: string,
+      displayName: string,
+      password: string,
+    ): Promise<{ identity: BootstrapIdentity; token: string; session: Session }>;
     login(schoolId: string, username: string, password: string, kind: 'desktop' | 'browser'): Promise<{ token: string; session: Session }>;
     authenticate(token: string): Promise<Session>;
     logout(token: string): Promise<{ ok: true }>;
@@ -47,8 +56,8 @@ export interface EngineClient {
   peers: {
     status(): Promise<EngineStatus['schools']>;
     scan(): Promise<PeerAdvertisement[]>;
-    addManualPeer(ip: string, port?: number): Promise<PeerAdvertisement>;
-    listManualPeers(): Promise<PeerAdvertisement[]>;
+    addManualPeer(ip: string, port?: number): Promise<ManualPeerEntry>;
+    listManualPeers(): Promise<ManualPeerEntry[]>;
     requestPairing(addr: string, schoolId: string, schoolName: string): Promise<PairPending>;
     approvePairing(schoolId: string, deviceId: string, approvedBy: string): Promise<{ ok: true }>;
     revokeDevice(schoolId: string, deviceId: string, revokedBy: string, reason: string): Promise<{ ok: true }>;

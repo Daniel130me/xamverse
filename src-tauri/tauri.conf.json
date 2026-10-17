@@ -2,10 +2,12 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "XamVerse",
   "version": "0.1.0",
-  "identifier": "com.xamverse.shell",
+  "identifier": "com.xamverse.desktop",
   "build": {
+    "beforeBuildCommand": "npm --prefix .. run desktop:prepare",
+    "beforeDevCommand": "npm --prefix .. run dev",
     "devUrl": "http://localhost:3000",
-    "frontendDist": "scaffold-dist"
+    "frontendDist": "frontend-dist"
   },
   "app": {
     "windows": [
@@ -24,6 +26,7 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "dmg"],
+    "resources": ["frontend-dist/**/*"],
     "icon": []
   }
 }

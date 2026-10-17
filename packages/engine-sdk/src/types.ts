@@ -31,6 +31,17 @@ export interface PeerAdvertisement {
   addresses: string[];
 }
 
+export interface BootstrapIdentity {
+  school_id: string;
+  user_id: string;
+  username: string;
+}
+
+export interface ManualPeerEntry {
+  key: string;
+  addr: string;
+}
+
 export interface PairPending {
   responder_device_id: string;
   responder_name: string;

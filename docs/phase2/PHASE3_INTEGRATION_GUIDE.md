@@ -7,12 +7,12 @@ syncing, subscribing to events, using the SDK, building business services,
 persisting attempts, collecting results, enforcing permissions, serving the
 frontend to browsers, activating licences and packaging the desktop app. It
 maps the Phase 1 prototype mocks to their engine replacements (from
-`CODEX_PHASE2_HANDOFF.md` §5) and states clearly what Phase 3 owns. Code
+`CODEX_PHASE2_HANDOFF.md` §5) and states clearly what application work remains. Code
 examples use real signatures; anything that does not exist yet is labelled.
 
 ---
 
-## 0. What Phase 3 owns (and Phase 2 deliberately does not)
+## 0. What the application layer owns
 
 Phase 2 delivered the **desktop infrastructure engine**. Phase 3 builds the
 **application**:
@@ -25,10 +25,10 @@ Phase 2 delivered the **desktop infrastructure engine**. Phase 3 builds the
   change);
 * per-category payload validators and the replication target policies ("who
   receives what") on top of `LocalOps::create`'s explicit target lists;
-* the Tauri shell (`src-tauri/`) wiring commands + events to the SDK, the
-  exam-active update interlock, backup scheduling, licence UX;
-* the production frontend bundle served by the bridge (`BROWSER_ACCESS.md`)
-  or the Tauri asset resolver.
+* exam-active update policy, backup scheduling, licence UX, and every other
+  school-facing workflow. The Tauri shell, native command/event bridge,
+  OS-backed keystore, and production frontend asset pipeline are supplied by
+  the infrastructure layer.
 
 The engine contract you build against: `ENGINE_API.md` (namespaces),
 `SYNC_ENGINE.md` (flows), `CONFLICT_RESOLUTION.md` (policies),
@@ -38,10 +38,8 @@ The engine contract you build against: `ENGINE_API.md` (namespaces),
 
 ```bash
 git clone https://github.com/Daniel130me/xamverse && cd xamverse
-# NOTE: in the current checkout the engine work lives on `main`; the local
-# `feat/desktopz` branch still points at the Phase 1 baseline (branch
-# housekeeping is an orchestrator task — see PHASE2_COMPLETION_REPORT.md).
-cargo test --workspace             # 76 unit tests must pass (TESTING.md)
+# The desktop infrastructure work is developed on `feat/desktopz`.
+cargo test --workspace             # run the complete native suite (TESTING.md)
 cargo run -p xamverse-peer -- serve --port 47810 --name "Lab PC 01"
 ```
 
@@ -238,16 +236,16 @@ and the missing issuer-PK flag on `licence-import` — `KNOWN_LIMITATIONS.md`.
 
 ## 13. Package the desktop app (Tauri 2)
 
-1. `src-tauri/` (independent package, excluded from the workspace): commands
-   map 1:1 to engine namespaces (`ENGINE_API.md` §1); events forward
-   `EventBus` → `emit`; wire `UpdateInterlocks` (exam-active check +
-   backup-first) and the OS-keychain `SecureKeyStore` implementation.
-2. Embed the frontend bundle via the Tauri asset resolver; the SDK's
-   desktop adapter (`invoke("engine_<ns>_<op>")`) talks to those commands.
-3. `tauri bundler` → `.msi` / `.dmg`; installer checklist (ACLs, firewall
-   rules, TLS trust onboarding, key pinning) and the **required code-signing
-   steps** are in `UPDATES_AND_INSTALLERS.md` §6–7 — not yet executed in
-   this environment.
+1. Run `npm run desktop:prepare` to type-check and export the Next.js app
+   into the Tauri resource directory.
+2. Build from `src-tauri/`. Its commands map 1:1 to engine namespaces,
+   forward `EventBus` events, and use the OS credential store. The desktop
+   workflow in `.github/workflows/desktop.yml` produces Windows MSI and
+   Apple Silicon DMG test artifacts.
+3. Before public release, configure the production issuer/release public
+   keys, Windows Authenticode and Apple Developer ID/notarization secrets.
+   LAN TLS trust onboarding and the application-owned exam-active update
+   policy remain release gates; see `UPDATES_AND_INSTALLERS.md` §6–7.
 
 ## 14. Phase 1 mock → engine mapping (handoff §5, verified against the code)
 

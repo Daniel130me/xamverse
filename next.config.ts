@@ -1,11 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  /* config options here */
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+  // One static artifact is embedded by Tauri and served by the LAN bridge.
+  // Keeping a single artifact prevents desktop/browser UI version drift.
+  output: "export",
   reactStrictMode: false,
 };
 
