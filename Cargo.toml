@@ -75,6 +75,9 @@ tower-http = { version = "0.6", features = ["fs", "limit", "trace"] }
 
 # CLI and observability.
 clap = { version = "4", features = ["derive"] }
+# Operator-facing error reporting for the CLI tools (user sees the message,
+# never a backtrace panic); engine crates keep their typed thiserror enums.
+anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

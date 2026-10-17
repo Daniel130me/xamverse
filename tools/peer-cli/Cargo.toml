@@ -23,6 +23,8 @@ serde_json = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+data-encoding = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
