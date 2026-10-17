@@ -12,6 +12,10 @@
 //! * per-category conflict policies — no unconditional last-write-wins,
 //! * no permanent collector roles — any trusted peer may be collected from.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod apply;
 pub mod category;
 pub mod conflict;
@@ -51,4 +55,3 @@ pub enum SyncError {
 }
 
 // Keep engine-level constants importable where they are used.
-pub(crate) use engine::{JOB_POLL_INTERVAL, MANIFEST_PAGE, MAX_BLOB_ROUNDS, MAX_RETRIES};

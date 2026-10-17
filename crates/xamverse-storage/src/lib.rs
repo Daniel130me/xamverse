@@ -18,6 +18,10 @@
 //! re-created per call (rusqlite caches per connection when needed). Batch
 //! writes always go through [`Database::tx`] so they commit atomically.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod error;
 pub mod keystore;
 pub mod migrations;
@@ -99,7 +103,10 @@ pub struct Database {
 
 impl Database {
     /// Open (or create) an encrypted database and run migrations.
-    pub fn open(path: impl Into<PathBuf>, key: &DatabaseKey) -> StorageResult<(Self, MigrationReport)> {
+    pub fn open(
+        path: impl Into<PathBuf>,
+        key: &DatabaseKey,
+    ) -> StorageResult<(Self, MigrationReport)> {
         let path = path.into();
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
@@ -110,7 +117,7 @@ impl Database {
 
         // Unlock the database. SQLCipher only surfaces key errors on first
         // use, so probe immediately for a fail-fast, explicit error.
-        conn.pragma_update(None, "key", &key.pragma_value())?;
+        conn.pragma_update(None, "key", key.pragma_value())?;
         let probe: i64 = conn
             .query_row("SELECT COUNT(*) FROM sqlite_master", [], |row| row.get(0))
             .map_err(|e| match e {
@@ -147,7 +154,9 @@ impl Database {
 
     /// Access the connection for read queries.
     pub fn lock(&self) -> MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.conn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Run a closure inside an IMMEDIATE transaction: writes are serialized
@@ -190,7 +199,10 @@ impl Database {
         let mut out = Vec::with_capacity(tables.len());
         for table in tables {
             // Table names come from sqlite_master, not user input.
-            let count: i64 = guard.query_row(&format!("SELECT COUNT(*) FROM \"{table}\""), [], |r| r.get(0))?;
+            let count: i64 =
+                guard.query_row(&format!("SELECT COUNT(*) FROM \"{table}\""), [], |r| {
+                    r.get(0)
+                })?;
             out.push((table, count));
         }
         Ok(out)

@@ -20,6 +20,10 @@
 //! Secrets live in the [`SecureKeyStore`] (OS keychain preferred; see the
 //! keystore module's documented fallback). Seeds are zeroized on drop.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 mod card;
 
 pub use card::{DeviceCard, ProtocolVersion, PROTOCOL_VERSION_MAJOR, PROTOCOL_VERSION_MINOR};
@@ -28,9 +32,9 @@ use data_encoding::BASE32_NOPAD;
 use ed25519_dalek::{Signer as _, SigningKey};
 use sha2::{Digest, Sha256};
 use std::sync::Mutex;
-use x25519_dalek::{StaticSecret as XStaticSecret, PublicKey as XPublicKey};
-use zeroize::Zeroizing;
+use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XStaticSecret};
 use xamverse_storage::{SecureKeyStore, StorageError, StorageResult};
+use zeroize::Zeroizing;
 
 /// Names under which identity material is stored in the keystore.
 pub mod key_names {
@@ -63,7 +67,6 @@ impl SigningKeyPair {
     }
 
     pub fn sign(&self, message: &[u8]) -> String {
-        
         data_encoding::BASE64.encode(&self.signing.sign(message).to_bytes())
     }
 
@@ -93,14 +96,20 @@ impl TransportKeyPair {
     }
 
     pub fn public_b64(&self) -> String {
-        let secret = self.secret.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let secret = self
+            .secret
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         data_encoding::BASE64.encode(XPublicKey::from(&*secret).as_bytes())
     }
 
     /// Raw secret for handing to the Noise handshake (consumed once per
     /// connection; the keypair itself stays alive for the engine lifetime).
     pub fn secret_bytes(&self) -> [u8; 32] {
-        let secret = self.secret.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let secret = self
+            .secret
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         secret.to_bytes()
     }
 }
@@ -234,6 +243,10 @@ mod tests {
         let msg = b"hello engine";
         let sig = identity.sign(msg);
         assert!(verify_signature(&identity.signing.public_b64(), msg, &sig));
-        assert!(!verify_signature(&identity.signing.public_b64(), b"tampered", &sig));
+        assert!(!verify_signature(
+            &identity.signing.public_b64(),
+            b"tampered",
+            &sig
+        ));
     }
 }

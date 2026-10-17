@@ -391,11 +391,7 @@ pub fn run(conn: &mut Connection) -> StorageResult<MigrationReport> {
         )
         .map_err(StorageError::from)?;
 
-    let known_max = MIGRATIONS
-        .iter()
-        .map(|m| m.version)
-        .max()
-        .unwrap_or(0);
+    let known_max = MIGRATIONS.iter().map(|m| m.version).max().unwrap_or(0);
     if current > known_max {
         return Err(StorageError::SchemaTooNew { found: current });
     }
@@ -440,7 +436,11 @@ pub fn run(conn: &mut Connection) -> StorageResult<MigrationReport> {
                 )?;
                 tx.commit()?;
                 applied.push(migration.version);
-                tracing::info!(version = migration.version, name = migration.name, "migration applied");
+                tracing::info!(
+                    version = migration.version,
+                    name = migration.name,
+                    "migration applied"
+                );
             }
         }
     }

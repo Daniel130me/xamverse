@@ -65,7 +65,8 @@ pub struct PackagesRepo;
 
 impl PackagesRepo {
     pub fn put(conn: &Connection, package: &PackageRow) -> StorageResult<bool> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "INSERT OR IGNORE INTO packages
                 (package_id, school_id, assessment_id, version, content_sha256,
                  manifest_json, approved_by, approved_signature, blob_sha256,
@@ -103,7 +104,11 @@ impl PackagesRepo {
             })
     }
 
-    pub fn get_by_content(conn: &Connection, school_id: &str, content_sha256: &str) -> StorageResult<Option<PackageRow>> {
+    pub fn get_by_content(
+        conn: &Connection,
+        school_id: &str,
+        content_sha256: &str,
+    ) -> StorageResult<Option<PackageRow>> {
         let mut stmt = conn.prepare_cached(&format!(
             "{} WHERE school_id = ?1 AND content_sha256 = ?2",
             Self::SELECT
@@ -115,7 +120,11 @@ impl PackagesRepo {
         }
     }
 
-    pub fn latest_for_assessment(conn: &Connection, school_id: &str, assessment_id: &str) -> StorageResult<Option<PackageRow>> {
+    pub fn latest_for_assessment(
+        conn: &Connection,
+        school_id: &str,
+        assessment_id: &str,
+    ) -> StorageResult<Option<PackageRow>> {
         let mut stmt = conn.prepare_cached(&format!(
             "{} WHERE school_id = ?1 AND assessment_id = ?2
              ORDER BY version DESC LIMIT 1",
@@ -165,7 +174,8 @@ pub struct AttemptsRepo;
 
 impl AttemptsRepo {
     pub fn create(conn: &Connection, attempt: &AttemptRow) -> StorageResult<bool> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "INSERT OR IGNORE INTO attempts
                 (attempt_id, school_id, package_id, student_ref, status, device_id,
                  started_at, finalized_at, finalize_signature, latest_chain_hash)
@@ -246,12 +256,13 @@ impl AttemptsRepo {
         let recorded_at = now_rfc3339();
         // Chain: hash = SHA-256(prev_hash | kind | recorded_at | payload)
         let hash = checksum(format!("{prev_hash}|{kind}|{recorded_at}|{payload_json}"));
-        exec(conn, 
+        exec(conn,
             "INSERT INTO attempt_events (attempt_id, kind, payload_json, recorded_at, prev_hash, hash)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![attempt_id, kind, payload_json, recorded_at, prev_hash, hash],
         )?;
-        exec(conn, 
+        exec(
+            conn,
             "UPDATE attempts SET latest_chain_hash = ?2 WHERE attempt_id = ?1",
             params![attempt_id, hash],
         )?;
@@ -272,7 +283,8 @@ impl AttemptsRepo {
         chain_hash: &str,
         signature: &str,
     ) -> StorageResult<()> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "UPDATE attempts
              SET status = 'finalized', finalized_at = ?2, finalize_signature = ?3,
                  latest_chain_hash = ?4
@@ -325,7 +337,10 @@ impl AttemptsRepo {
         let events = Self::list_events(conn, attempt_id)?;
         let mut prev = String::new();
         for event in &events {
-            let expected = checksum(format!("{}|{}|{}|{}", prev, event.kind, event.recorded_at, event.payload_json));
+            let expected = checksum(format!(
+                "{}|{}|{}|{}",
+                prev, event.kind, event.recorded_at, event.payload_json
+            ));
             if expected != event.hash || (!prev.is_empty() && prev != event.prev_hash) {
                 return Ok(false);
             }
@@ -368,7 +383,8 @@ impl CollectionReceiptsRepo {
     /// Insert a receipt. Returns `false` when the collector already has this
     /// attempt — repeated collection is idempotent by design.
     pub fn put(conn: &Connection, receipt: &CollectionReceiptRow) -> StorageResult<bool> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "INSERT OR IGNORE INTO collection_receipts
                 (receipt_id, attempt_id, school_id, collector_device_id,
                  source_device_id, collected_at, content_sha256)
@@ -386,7 +402,10 @@ impl CollectionReceiptsRepo {
         Ok(changed > 0)
     }
 
-    pub fn for_attempt(conn: &Connection, attempt_id: &str) -> StorageResult<Vec<CollectionReceiptRow>> {
+    pub fn for_attempt(
+        conn: &Connection,
+        attempt_id: &str,
+    ) -> StorageResult<Vec<CollectionReceiptRow>> {
         let mut stmt = conn.prepare_cached(
             "SELECT receipt_id, attempt_id, school_id, collector_device_id,
                     source_device_id, collected_at, content_sha256

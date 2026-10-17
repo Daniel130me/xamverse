@@ -16,17 +16,15 @@
 //!   "wrong password" in returned errors.
 //! * Password changes revoke every live session of that user on this device.
 
+use crate::permissions::builtin_role_permissions;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::Duration;
-use crate::permissions::builtin_role_permissions;
 use xamverse_audit::AuditEvent;
-use xamverse_storage::repos::{
-    LoginAttemptsRepo, SessionRow, SessionsRepo, UsersRepo,
-};
+use xamverse_storage::repos::{LoginAttemptsRepo, SessionRow, SessionsRepo, UsersRepo};
 use xamverse_storage::{now_rfc3339, Database, StorageError};
 
 /// Argon2id parameters (OWASP recommended baseline): 19 MiB memory, 2 passes,
@@ -156,9 +154,17 @@ impl AuthService {
         let window_start = (now - time_delta(self.config.lockout_window)).to_rfc3339();
         {
             let conn = self.db.lock();
-            let failures = LoginAttemptsRepo::count_failures_since(&conn, &throttle_key, &window_start)?;
+            let failures =
+                LoginAttemptsRepo::count_failures_since(&conn, &throttle_key, &window_start)?;
             if failures >= self.config.lockout_max_failures {
-                self.audit_login(&conn, school_id, username, actor_device, "auth.login.throttled", None);
+                self.audit_login(
+                    &conn,
+                    school_id,
+                    username,
+                    actor_device,
+                    "auth.login.throttled",
+                    None,
+                );
                 return Err(AuthError::LockedOut);
             }
         }
@@ -170,14 +176,14 @@ impl AuthService {
 
         let Some(user) = user else {
             // Consume comparable time so missing users are indistinguishable.
-            let _ = verify_password(password, &dummy_phc_hash());
+            let _ = verify_password(password, dummy_phc_hash());
             self.record_attempt(school_id, username, false, actor_device)?;
             return Err(AuthError::InvalidCredentials);
         };
 
         let Some(auth_hash) = user.auth_hash.clone() else {
             // Account exists but has no local credential provisioned yet.
-            let _ = verify_password(password, &dummy_phc_hash());
+            let _ = verify_password(password, dummy_phc_hash());
             self.record_attempt(school_id, username, false, actor_device)?;
             return Err(AuthError::InvalidCredentials);
         };
@@ -223,7 +229,14 @@ impl AuthService {
             )?;
             LoginAttemptsRepo::record(&conn, &throttle_key, true)?;
             let perms = UsersRepo::effective_permissions(&conn, school_id, &user.user_id)?;
-            self.audit_login(&conn, school_id, username, actor_device, "auth.login", Some(&user.user_id));
+            self.audit_login(
+                &conn,
+                school_id,
+                username,
+                actor_device,
+                "auth.login",
+                Some(&user.user_id),
+            );
             perms.into_iter().collect()
         };
 
@@ -317,7 +330,12 @@ impl AuthService {
     }
 
     /// Administrative revocation of every live session for a user on this node.
-    pub fn revoke_all_for_user(&self, school_id: &str, user_id: &str, reason: &str) -> Result<u64, AuthError> {
+    pub fn revoke_all_for_user(
+        &self,
+        school_id: &str,
+        user_id: &str,
+        reason: &str,
+    ) -> Result<u64, AuthError> {
         let conn = self.db.lock();
         let count = SessionsRepo::revoke_all_for_user(&conn, school_id, user_id, reason)?;
         Ok(count)
@@ -384,20 +402,31 @@ impl AuthService {
     /// Housekeeping (background job): drop expired/revoked session rows and
     /// stale login attempts.
     pub fn housekeeping(&self) -> Result<(u64, u64), AuthError> {
-        let cutoff = (chrono::Utc::now()
-            - chrono::TimeDelta::try_seconds(7 * 24 * 3600).expect("valid duration"))
-            .to_rfc3339();
+        let cutoff = (chrono::Utc::now() - time_delta(HOUSEKEEPING_WINDOW)).to_rfc3339();
         let conn = self.db.lock();
         let sessions = SessionsRepo::purge_expired(&conn)?;
         let attempts = LoginAttemptsRepo::prune_older_than(&conn, &cutoff)?;
         Ok((sessions, attempts))
     }
 
-    fn record_attempt(&self, school_id: &str, username: &str, success: bool, actor_device: Option<&str>) -> Result<(), AuthError> {
+    fn record_attempt(
+        &self,
+        school_id: &str,
+        username: &str,
+        success: bool,
+        actor_device: Option<&str>,
+    ) -> Result<(), AuthError> {
         let conn = self.db.lock();
         LoginAttemptsRepo::record(&conn, &format!("{school_id}:{username}"), success)?;
         if !success {
-            self.audit_login(&conn, school_id, username, actor_device, "auth.login.failed", None);
+            self.audit_login(
+                &conn,
+                school_id,
+                username,
+                actor_device,
+                "auth.login.failed",
+                None,
+            );
         }
         Ok(())
     }
@@ -434,19 +463,22 @@ pub fn hash_password(password: &str) -> Result<String, AuthError> {
     let argon = Argon2::new(
         argon2::Algorithm::Argon2id,
         argon2::Version::V0x13,
-        argon2::Params::new(ARGON_M_COST_KIB, ARGON_T_COST, ARGON_P_COST, None)
-            .map_err(|e| AuthError::Storage(StorageError::InvalidValue {
+        argon2::Params::new(ARGON_M_COST_KIB, ARGON_T_COST, ARGON_P_COST, None).map_err(|e| {
+            AuthError::Storage(StorageError::InvalidValue {
                 field: "argon2 params",
                 reason: e.to_string(),
-            }))?,
+            })
+        })?,
     );
     argon
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
-        .map_err(|e| AuthError::Storage(StorageError::InvalidValue {
-            field: "password hash",
-            reason: e.to_string(),
-        }))
+        .map_err(|e| {
+            AuthError::Storage(StorageError::InvalidValue {
+                field: "password hash",
+                reason: e.to_string(),
+            })
+        })
 }
 
 /// Verify a password against a PHC-format Argon2id hash.
@@ -465,8 +497,13 @@ fn dummy_phc_hash() -> &'static str {
     use std::sync::OnceLock;
     static DUMMY: OnceLock<String> = OnceLock::new();
     DUMMY.get_or_init(|| {
-        hash_password(&xamverse_storage::random_bytes(18).iter().map(|b| format!("{b:02x}")).collect::<String>())
-            .unwrap_or_else(|_| "$argon2id$invalid".to_string())
+        hash_password(
+            &xamverse_storage::random_bytes(18)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>(),
+        )
+        .unwrap_or_else(|_| "$argon2id$invalid".to_string())
     })
 }
 
@@ -483,10 +520,11 @@ fn hex(bytes: &[u8]) -> String {
 /// Convert a std Duration to chrono's TimeDelta. All configured durations are
 /// compile-time constants far below the representable range, so failure is
 /// impossible; map it to a storage error rather than a chrono error type.
+/// Login attempts older than this are pruned by housekeeping.
+const HOUSEKEEPING_WINDOW: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
+
 fn time_delta(d: std::time::Duration) -> chrono::TimeDelta {
-    chrono::TimeDelta::from_std(d).unwrap_or_else(|_| {
-        chrono::TimeDelta::try_seconds(1).expect("1s is representable")
-    })
+    chrono::TimeDelta::from_std(d).unwrap_or_else(|_| chrono::TimeDelta::seconds(1))
 }
 
 /// Seed the builtin roles (with their permission sets) for a school.
@@ -509,8 +547,10 @@ pub fn seed_builtin_roles(conn: &Connection, school_id: &str) -> Result<(), Stor
                 revision: 1,
             },
         )?;
-        let permissions: Vec<String> =
-            builtin_role_permissions(role_name).into_iter().map(String::from).collect();
+        let permissions: Vec<String> = builtin_role_permissions(role_name)
+            .into_iter()
+            .map(String::from)
+            .collect();
         UsersRepo::set_role_permissions(conn, school_id, role_id, &permissions)?;
     }
     Ok(())
@@ -519,18 +559,20 @@ pub fn seed_builtin_roles(conn: &Connection, school_id: &str) -> Result<(), Stor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xamverse_storage::repos::{SchoolsRepo, UserRow, UsersRepo};
-use xamverse_storage::{DatabaseKey, MemoryKeyStore};
+    use xamverse_storage::repos::{SchoolsRepo, UsersRepo};
+    use xamverse_storage::DatabaseKey;
 
     fn setup() -> (tempfile::TempDir, Arc<Database>) {
         let dir = tempfile::tempdir().unwrap();
-        let (db, _) = Database::open(dir.path().join("auth.xamdb"), &DatabaseKey::generate()).unwrap();
+        let (db, _) =
+            Database::open(dir.path().join("auth.xamdb"), &DatabaseKey::generate()).unwrap();
         let db = Arc::new(db);
         db.tx(|conn| {
             SchoolsRepo::enroll(conn, "school-1", "Test School")?;
             seed_builtin_roles(conn, "school-1")?;
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         (dir, db)
     }
 
@@ -538,23 +580,29 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         let user_id = uuid::Uuid::now_v7().to_string();
         let hash = hash_password(password).unwrap();
         db.tx(|conn| {
-            UsersRepo::upsert(conn, &xamverse_storage::repos::UserRow {
-                user_id: user_id.clone(),
-                school_id: "school-1".into(),
-                username: username.into(),
-                display_name: username.into(),
-                status: "active".into(),
-                auth_hash: Some(hash),
-                origin_device_id: None,
-                revision: 1,
-                updated_at: now_rfc3339(),
-            })?;
+            UsersRepo::upsert(
+                conn,
+                &xamverse_storage::repos::UserRow {
+                    user_id: user_id.clone(),
+                    school_id: "school-1".into(),
+                    username: username.into(),
+                    display_name: username.into(),
+                    status: "active".into(),
+                    auth_hash: Some(hash),
+                    origin_device_id: None,
+                    revision: 1,
+                    updated_at: now_rfc3339(),
+                },
+            )?;
             for role in roles {
-                let role_row = UsersRepo::find_role_by_name(conn, "school-1", role).unwrap().unwrap();
+                let role_row = UsersRepo::find_role_by_name(conn, "school-1", role)
+                    .unwrap()
+                    .unwrap();
                 UsersRepo::grant_role(conn, "school-1", &user_id, &role_row.role_id, None)?;
             }
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         user_id
     }
 
@@ -563,7 +611,16 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         let (_dir, db) = setup();
         let service = AuthService::new(db.clone());
         create_user(&db, "alice", "correct-horse", &["teacher"]);
-        let (token, ctx) = service.login("school-1", "alice", "correct-horse", SessionKind::Desktop, None, None).unwrap();
+        let (token, ctx) = service
+            .login(
+                "school-1",
+                "alice",
+                "correct-horse",
+                SessionKind::Desktop,
+                None,
+                None,
+            )
+            .unwrap();
         assert!(ctx.permissions.contains(&"sync.read".to_string()));
         assert!(!ctx.permissions.contains(&"backups.manage".to_string()));
 
@@ -571,7 +628,10 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         assert_eq!(authed.user_id, ctx.user_id);
 
         service.logout(&token).unwrap();
-        assert!(matches!(service.authenticate(&token), Err(AuthError::SessionInvalid)));
+        assert!(matches!(
+            service.authenticate(&token),
+            Err(AuthError::SessionInvalid)
+        ));
     }
 
     #[test]
@@ -579,8 +639,19 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         let (_dir, db) = setup();
         let service = AuthService::new(db.clone());
         create_user(&db, "bob", "right", &["student"]);
-        let e1 = service.login("school-1", "bob", "wrong", SessionKind::Desktop, None, None).unwrap_err();
-        let e2 = service.login("school-1", "ghost", "wrong", SessionKind::Desktop, None, None).unwrap_err();
+        let e1 = service
+            .login("school-1", "bob", "wrong", SessionKind::Desktop, None, None)
+            .unwrap_err();
+        let e2 = service
+            .login(
+                "school-1",
+                "ghost",
+                "wrong",
+                SessionKind::Desktop,
+                None,
+                None,
+            )
+            .unwrap_err();
         assert_eq!(e1.to_string(), e2.to_string());
     }
 
@@ -589,14 +660,37 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         let (_dir, db) = setup();
         let service = AuthService::new(db.clone());
         let user_id = create_user(&db, "carol", "pw-123456", &["admin"]);
-        let (token, _) = service.login("school-1", "carol", "pw-123456", SessionKind::Desktop, None, None).unwrap();
+        let (token, _) = service
+            .login(
+                "school-1",
+                "carol",
+                "pw-123456",
+                SessionKind::Desktop,
+                None,
+                None,
+            )
+            .unwrap();
 
-        db.tx(|conn| { UsersRepo::set_status(conn, "school-1", &user_id, "suspended")?; Ok(()) }).unwrap();
+        db.tx(|conn| {
+            UsersRepo::set_status(conn, "school-1", &user_id, "suspended")?;
+            Ok(())
+        })
+        .unwrap();
         assert!(matches!(
-            service.login("school-1", "carol", "pw-123456", SessionKind::Desktop, None, None),
+            service.login(
+                "school-1",
+                "carol",
+                "pw-123456",
+                SessionKind::Desktop,
+                None,
+                None
+            ),
             Err(AuthError::AccountSuspended)
         ));
-        assert!(matches!(service.authenticate(&token), Err(AuthError::AccountSuspended)));
+        assert!(matches!(
+            service.authenticate(&token),
+            Err(AuthError::AccountSuspended)
+        ));
     }
 
     #[test]
@@ -605,11 +699,25 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         let service = AuthService::new(db.clone());
         create_user(&db, "mallory", "never-guess", &["student"]);
         for _ in 0..5 {
-            let _ = service.login("school-1", "mallory", "bad", SessionKind::Desktop, None, None);
+            let _ = service.login(
+                "school-1",
+                "mallory",
+                "bad",
+                SessionKind::Desktop,
+                None,
+                None,
+            );
         }
         // Even the CORRECT password is now refused: throttle wins.
         assert!(matches!(
-            service.login("school-1", "mallory", "never-guess", SessionKind::Desktop, None, None),
+            service.login(
+                "school-1",
+                "mallory",
+                "never-guess",
+                SessionKind::Desktop,
+                None,
+                None
+            ),
             Err(AuthError::LockedOut)
         ));
     }
@@ -619,16 +727,53 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         let (_dir, db) = setup();
         let service = AuthService::new(db.clone());
         create_user(&db, "dave", "old-password", &["owner"]);
-        let (token, _) = service.login("school-1", "dave", "old-password", SessionKind::Desktop, None, None).unwrap();
+        let (token, _) = service
+            .login(
+                "school-1",
+                "dave",
+                "old-password",
+                SessionKind::Desktop,
+                None,
+                None,
+            )
+            .unwrap();
 
         // Wrong old password refused.
-        assert!(service.change_password("school-1", &ctx_user(&service, &token), Some("nope"), "new-password-1", None).is_err());
-        service.change_password("school-1", &ctx_user(&service, &token), Some("old-password"), "new-password-1", None).unwrap();
+        assert!(service
+            .change_password(
+                "school-1",
+                &ctx_user(&service, &token),
+                Some("nope"),
+                "new-password-1",
+                None
+            )
+            .is_err());
+        service
+            .change_password(
+                "school-1",
+                &ctx_user(&service, &token),
+                Some("old-password"),
+                "new-password-1",
+                None,
+            )
+            .unwrap();
 
         // All sessions revoked by the change.
-        assert!(matches!(service.authenticate(&token), Err(AuthError::SessionInvalid)));
+        assert!(matches!(
+            service.authenticate(&token),
+            Err(AuthError::SessionInvalid)
+        ));
         // New password works.
-        let _ = service.login("school-1", "dave", "new-password-1", SessionKind::Desktop, None, None).unwrap();
+        let _ = service
+            .login(
+                "school-1",
+                "dave",
+                "new-password-1",
+                SessionKind::Desktop,
+                None,
+                None,
+            )
+            .unwrap();
     }
 
     fn ctx_user(service: &AuthService, token: &str) -> String {
@@ -638,11 +783,26 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
     #[test]
     fn reauthentication_required_for_old_sessions() {
         let (_dir, db) = setup();
-        let config = AuthConfig { sensitive_max_age: Duration::from_secs(0), ..AuthConfig::default() };
+        let config = AuthConfig {
+            sensitive_max_age: Duration::from_secs(0),
+            ..AuthConfig::default()
+        };
         let service = AuthService::with_config(db.clone(), config);
         create_user(&db, "erin", "pw-123456", &["admin"]);
-        let (token, ctx) = service.login("school-1", "erin", "pw-123456", SessionKind::Desktop, None, None).unwrap();
-        assert!(matches!(service.require_fresh(&ctx), Err(AuthError::ReauthenticationRequired)));
+        let (token, ctx) = service
+            .login(
+                "school-1",
+                "erin",
+                "pw-123456",
+                SessionKind::Desktop,
+                None,
+                None,
+            )
+            .unwrap();
+        assert!(matches!(
+            service.require_fresh(&ctx),
+            Err(AuthError::ReauthenticationRequired)
+        ));
         let _ = service.logout(&token);
     }
 
@@ -650,7 +810,9 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
     fn builtin_roles_seeded_per_school() {
         let (_dir, db) = setup();
         let conn = db.lock();
-        let owner = UsersRepo::find_role_by_name(&conn, "school-1", "owner").unwrap().unwrap();
+        let owner = UsersRepo::find_role_by_name(&conn, "school-1", "owner")
+            .unwrap()
+            .unwrap();
         let perms = UsersRepo::effective_permissions(&conn, "school-1", "nobody").unwrap();
         assert!(perms.is_empty()); // no users yet — but role table exists
         let roles = UsersRepo::list_roles_for_user(&conn, "school-1", "none").unwrap();

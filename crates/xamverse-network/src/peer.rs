@@ -35,7 +35,12 @@ pub type HandlerFuture = Pin<Box<dyn Future<Output = Option<Envelope>> + Send>>;
 
 /// The engine's message handling surface. Implemented by the sync engine.
 pub trait PeerHandler: Send + Sync + 'static {
-    fn handle(&self, peer: &AuthenticatedPeer, trusted: TrustDecision, msg: Envelope) -> HandlerFuture;
+    fn handle(
+        &self,
+        peer: &AuthenticatedPeer,
+        trusted: TrustDecision,
+        msg: Envelope,
+    ) -> HandlerFuture;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -126,10 +131,16 @@ async fn serve_connection(
     trust_policy: TrustPolicy,
     handler: Arc<dyn PeerHandler>,
 ) -> Result<(), PeerServerError> {
-    let (channel, remote_static) =
-        SecureChannel::handshake(stream, HandshakeRole::Responder, identity.transport.secret_bytes()).await?;
+    let (channel, remote_static) = SecureChannel::handshake(
+        stream,
+        HandshakeRole::Responder,
+        identity.transport.secret_bytes(),
+    )
+    .await?;
     let mut channel = channel;
-    let peer = channel.exchange_device_cards(&identity, &remote_static).await?;
+    let peer = channel
+        .exchange_device_cards(&identity, &remote_static)
+        .await?;
 
     let decision = trust_policy(&peer);
     if decision == TrustDecision::Reject {
@@ -182,21 +193,32 @@ impl PeerClient {
         identity: &DeviceIdentity,
         trust_policy: &TrustPolicy,
     ) -> Result<PeerConnection, PeerServerError> {
-        let stream = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            TcpStream::connect(addr),
-        )
-        .await
-        .map_err(|_| PeerServerError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "connect timeout")))??;
+        let stream =
+            tokio::time::timeout(std::time::Duration::from_secs(10), TcpStream::connect(addr))
+                .await
+                .map_err(|_| {
+                    PeerServerError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "connect timeout",
+                    ))
+                })??;
 
-        let (channel, remote_static) =
-            SecureChannel::handshake(stream, HandshakeRole::Initiator, identity.transport.secret_bytes()).await?;
+        let (channel, remote_static) = SecureChannel::handshake(
+            stream,
+            HandshakeRole::Initiator,
+            identity.transport.secret_bytes(),
+        )
+        .await?;
         let mut channel = channel;
-        let peer = channel.exchange_device_cards(identity, &remote_static).await?;
+        let peer = channel
+            .exchange_device_cards(identity, &remote_static)
+            .await?;
         let decision = trust_policy(&peer);
         if decision == TrustDecision::Reject {
             channel.goodbye().await;
-            return Err(PeerServerError::Channel(crate::secure::ChannelError::InvalidDeviceCard));
+            return Err(PeerServerError::Channel(
+                crate::secure::ChannelError::InvalidDeviceCard,
+            ));
         }
         Ok(PeerConnection {
             channel,

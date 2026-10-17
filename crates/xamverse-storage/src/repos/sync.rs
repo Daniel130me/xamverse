@@ -5,6 +5,7 @@ use super::exec;
 use crate::error::{StorageError, StorageResult};
 use crate::now_rfc3339;
 use rusqlite::{params, types::Value as SqlValue, Connection};
+use std::str::FromStr;
 
 /// A signed operation in the append-only log.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -62,7 +63,8 @@ impl OpsRepo {
     /// Append an op to the log. Returns `false` when the op already exists
     /// (idempotency by primary key — repeated deliveries are free).
     pub fn insert(conn: &Connection, op: &OpRow) -> StorageResult<bool> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "INSERT OR IGNORE INTO sync_ops
              (op_id, school_id, category, object_id, revision, base_revision,
               author_device_id, lamport, tombstone, schema_version, payload_sha256,
@@ -102,14 +104,13 @@ impl OpsRepo {
                     payload_json, blob_sha256, signature, received_from, received_at
              FROM sync_ops WHERE op_id = ?1",
         )?;
-        stmt.query_row([op_id], Self::map_row)
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => StorageError::NotFound {
-                    entity: "sync_op",
-                    id: op_id.to_string(),
-                },
-                other => other.into(),
-            })
+        stmt.query_row([op_id], Self::map_row).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => StorageError::NotFound {
+                entity: "sync_op",
+                id: op_id.to_string(),
+            },
+            other => other.into(),
+        })
     }
 
     pub fn get_many(conn: &Connection, op_ids: &[String]) -> StorageResult<Vec<OpRow>> {
@@ -208,7 +209,8 @@ impl ObjectsRepo {
     /// already decided this op is newer; the guarded update below is the last
     /// line of defence against races within the same transaction.
     pub fn apply_op_state(conn: &Connection, op: &OpRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO sync_objects
                 (school_id, category, object_id, current_revision, current_op_id,
                  payload_sha256, tombstone, lamport, updated_at)
@@ -334,7 +336,12 @@ impl JobKind {
             JobKind::Collect => "collect",
         }
     }
-    pub fn from_str(raw: &str) -> StorageResult<Self> {
+}
+
+impl std::str::FromStr for JobKind {
+    type Err = StorageError;
+
+    fn from_str(raw: &str) -> StorageResult<Self> {
         match raw {
             "push_op" => Ok(JobKind::PushOp),
             "pull" => Ok(JobKind::Pull),
@@ -388,7 +395,8 @@ pub struct JobsRepo;
 
 impl JobsRepo {
     pub fn insert(conn: &Connection, job: &JobRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO sync_jobs (job_id, school_id, target_device_id, op_id, kind,
                                     status, attempts, next_attempt_at, last_error,
                                     created_at, updated_at)
@@ -428,9 +436,7 @@ impl JobsRepo {
         statuses: &[JobStatus],
         limit: i64,
     ) -> StorageResult<Vec<JobRow>> {
-        let mut sql = format!(
-            "{} WHERE school_id = ?1", Self::SELECT
-        );
+        let mut sql = format!("{} WHERE school_id = ?1", Self::SELECT);
         if !statuses.is_empty() {
             let placeholders = vec!["?"; statuses.len()].join(",");
             sql.push_str(&format!(" AND status IN ({placeholders})"));
@@ -439,7 +445,11 @@ impl JobsRepo {
         sql.push_str(&limit.to_string());
         let mut stmt = conn.prepare(&sql)?;
         let mut bind: Vec<SqlValue> = vec![SqlValue::Text(school_id.to_string())];
-        bind.extend(statuses.iter().map(|s| SqlValue::Text(s.as_str().to_string())));
+        bind.extend(
+            statuses
+                .iter()
+                .map(|s| SqlValue::Text(s.as_str().to_string())),
+        );
         let rows = stmt
             .query_map(rusqlite::params_from_iter(bind), Self::map_row)?
             .collect::<Result<Vec<_>, _>>()?;
@@ -461,8 +471,14 @@ impl JobsRepo {
         Ok(rows)
     }
 
-    pub fn mark_status(conn: &Connection, job_id: &str, status: JobStatus, error: Option<&str>) -> StorageResult<()> {
-        exec(conn, 
+    pub fn mark_status(
+        conn: &Connection,
+        job_id: &str,
+        status: JobStatus,
+        error: Option<&str>,
+    ) -> StorageResult<()> {
+        exec(
+            conn,
             "UPDATE sync_jobs SET status = ?2, last_error = ?3, updated_at = ?4 WHERE job_id = ?1",
             params![job_id, status.as_str(), error, now_rfc3339()],
         )?;
@@ -470,8 +486,14 @@ impl JobsRepo {
     }
 
     /// Record a failed attempt and schedule the retry with backoff.
-    pub fn record_failure(conn: &Connection, job_id: &str, error: &str, next_attempt_at: &str) -> StorageResult<()> {
-        exec(conn, 
+    pub fn record_failure(
+        conn: &Connection,
+        job_id: &str,
+        error: &str,
+        next_attempt_at: &str,
+    ) -> StorageResult<()> {
+        exec(
+            conn,
             "UPDATE sync_jobs
              SET status = 'failed', attempts = attempts + 1, last_error = ?2,
                  next_attempt_at = ?3, updated_at = ?4
@@ -484,7 +506,8 @@ impl JobsRepo {
     /// Reset failed jobs towards a target so reconnection triggers a retry
     /// storm-free immediate pass.
     pub fn reset_for_target(conn: &Connection, target_device_id: &str) -> StorageResult<u64> {
-        let changed = exec(conn,
+        let changed = exec(
+            conn,
             "UPDATE sync_jobs SET status = 'queued', next_attempt_at = NULL, updated_at = ?2
              WHERE target_device_id = ?1 AND status IN ('failed','running')",
             params![target_device_id, now_rfc3339()],
@@ -495,7 +518,8 @@ impl JobsRepo {
     /// Requeue every stuck `running` job — used at engine startup after a
     /// crash or unclean shutdown (the queue is durable, the executor is not).
     pub fn reset_running(conn: &Connection) -> StorageResult<u64> {
-        let changed = exec(conn,
+        let changed = exec(
+            conn,
             "UPDATE sync_jobs SET status = 'queued', next_attempt_at = NULL, updated_at = ?1
              WHERE status = 'running'",
             params![now_rfc3339()],
@@ -504,7 +528,8 @@ impl JobsRepo {
     }
 
     pub fn cancel(conn: &Connection, job_id: &str) -> StorageResult<bool> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "UPDATE sync_jobs SET status = 'cancelled', updated_at = ?2
              WHERE job_id = ?1 AND status IN ('queued','failed','running')",
             params![job_id, now_rfc3339()],
@@ -531,8 +556,12 @@ impl JobsRepo {
                 "failed" => JobStatus::Failed,
                 "cancelled" => JobStatus::Cancelled,
                 other => {
-                    return Err(rusqlite::Error::ToSqlConversionFailure(Box::<dyn std::error::Error + Send + Sync>::from(
-                        format!("unknown job status {other}"),
+                    return Err(rusqlite::Error::ToSqlConversionFailure(Box::<
+                        dyn std::error::Error + Send + Sync,
+                    >::from(
+                        format!(
+                        "unknown job status {other}"
+                    )
                     )))
                 }
             },
@@ -559,7 +588,9 @@ impl CheckpointsRepo {
              WHERE school_id = ?1 AND peer_device_id = ?2 AND category = ?3",
         )?;
         Ok(stmt
-            .query_row(params![school_id, peer_device_id, category], |row| row.get(0))
+            .query_row(params![school_id, peer_device_id, category], |row| {
+                row.get(0)
+            })
             .unwrap_or(0))
     }
 
@@ -570,7 +601,7 @@ impl CheckpointsRepo {
         category: &str,
         last_lamport: i64,
     ) -> StorageResult<()> {
-        exec(conn, 
+        exec(conn,
             "INSERT INTO sync_checkpoints (school_id, peer_device_id, category, last_lamport, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(school_id, peer_device_id, category) DO UPDATE SET
@@ -581,7 +612,11 @@ impl CheckpointsRepo {
         Ok(())
     }
 
-    pub fn for_peer(conn: &Connection, school_id: &str, peer_device_id: &str) -> StorageResult<Vec<(String, i64)>> {
+    pub fn for_peer(
+        conn: &Connection,
+        school_id: &str,
+        peer_device_id: &str,
+    ) -> StorageResult<Vec<(String, i64)>> {
         let mut stmt = conn.prepare_cached(
             "SELECT category, last_lamport FROM sync_checkpoints
              WHERE school_id = ?1 AND peer_device_id = ?2",
@@ -601,7 +636,8 @@ impl BlobRepo {
     /// Content-addressed insert: identical content is stored once (duplicate
     /// detection at the storage layer, idempotent replication).
     pub fn put(conn: &Connection, sha256: &str, data: &[u8]) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO blobs (sha256, size, data, created_at) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(sha256) DO NOTHING",
             params![sha256, data.len() as i64, data, now_rfc3339()],

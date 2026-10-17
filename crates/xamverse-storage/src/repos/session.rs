@@ -26,7 +26,8 @@ pub struct SessionsRepo;
 
 impl SessionsRepo {
     pub fn insert(conn: &Connection, session: &SessionRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO sessions (token_hash, user_id, school_id, kind, origin,
                                    created_at, expires_at, last_active_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -63,7 +64,8 @@ impl SessionsRepo {
     }
 
     pub fn touch(conn: &Connection, token_hash: &str) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "UPDATE sessions SET last_active_at = ?2 WHERE token_hash = ?1",
             params![token_hash, now_rfc3339()],
         )?;
@@ -71,7 +73,8 @@ impl SessionsRepo {
     }
 
     pub fn set_locked(conn: &Connection, token_hash: &str, locked: bool) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "UPDATE sessions SET locked_at = ?2 WHERE token_hash = ?1",
             params![token_hash, if locked { Some(now_rfc3339()) } else { None }],
         )?;
@@ -79,7 +82,8 @@ impl SessionsRepo {
     }
 
     pub fn revoke(conn: &Connection, token_hash: &str, reason: &str) -> StorageResult<bool> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "UPDATE sessions SET revoked_at = ?2, revoked_reason = ?3
              WHERE token_hash = ?1 AND revoked_at IS NULL",
             params![token_hash, now_rfc3339(), reason],
@@ -89,8 +93,14 @@ impl SessionsRepo {
 
     /// Credential hygiene: changing a password kills every live session for
     /// the user (all devices of this installation).
-    pub fn revoke_all_for_user(conn: &Connection, school_id: &str, user_id: &str, reason: &str) -> StorageResult<u64> {
-        let changed = exec(conn, 
+    pub fn revoke_all_for_user(
+        conn: &Connection,
+        school_id: &str,
+        user_id: &str,
+        reason: &str,
+    ) -> StorageResult<u64> {
+        let changed = exec(
+            conn,
             "UPDATE sessions SET revoked_at = ?3, revoked_reason = ?4
              WHERE school_id = ?1 AND user_id = ?2 AND revoked_at IS NULL",
             params![school_id, user_id, now_rfc3339(), reason],
@@ -99,7 +109,8 @@ impl SessionsRepo {
     }
 
     pub fn purge_expired(conn: &Connection) -> StorageResult<u64> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "DELETE FROM sessions WHERE expires_at <= ?1 OR revoked_at IS NOT NULL",
             params![now_rfc3339()],
         )?;
@@ -143,7 +154,8 @@ pub struct LoginAttemptsRepo;
 
 impl LoginAttemptsRepo {
     pub fn record(conn: &Connection, key: &str, success: bool) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO login_attempts (key, success, at) VALUES (?1, ?2, ?3)",
             params![key, success as i64, now_rfc3339()],
         )?;
@@ -151,7 +163,11 @@ impl LoginAttemptsRepo {
     }
 
     /// Failed attempts for `key` since the given RFC3339 timestamp.
-    pub fn count_failures_since(conn: &Connection, key: &str, since_rfc3339: &str) -> StorageResult<i64> {
+    pub fn count_failures_since(
+        conn: &Connection,
+        key: &str,
+        since_rfc3339: &str,
+    ) -> StorageResult<i64> {
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM login_attempts
              WHERE key = ?1 AND success = 0 AND at >= ?2",
@@ -163,7 +179,8 @@ impl LoginAttemptsRepo {
 
     /// Retention: prune attempts older than the given timestamp.
     pub fn prune_older_than(conn: &Connection, cutoff_rfc3339: &str) -> StorageResult<u64> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "DELETE FROM login_attempts WHERE at < ?1",
             params![cutoff_rfc3339],
         )?;

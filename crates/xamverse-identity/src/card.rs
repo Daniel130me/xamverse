@@ -69,6 +69,10 @@ impl DeviceCard {
     }
 
     /// Canonical bytes that are signed: JSON with the signature omitted.
+    // serde over a struct of borrowed Strings cannot fail at runtime (no
+    // maps, no custom serializers); the only failure mode is OOM, where the
+    // process is lost regardless. Allowed explicitly, not silently.
+    #[allow(clippy::expect_used)]
     pub fn signing_message(&self) -> Vec<u8> {
         serde_json::to_vec(&UnsignedView {
             device_id: &self.device_id,
@@ -125,7 +129,7 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-        use xamverse_storage::MemoryKeyStore;
+    use xamverse_storage::MemoryKeyStore;
 
     fn test_identity() -> DeviceIdentity {
         let keystore = MemoryKeyStore::default();
@@ -151,7 +155,10 @@ mod tests {
 
     #[test]
     fn protocol_major_mismatch_is_incompatible() {
-        assert!(ProtocolVersion { major: 1, minor: 3 }.is_compatible_with(&ProtocolVersion { major: 1, minor: 0 }));
-        assert!(!ProtocolVersion { major: 2, minor: 0 }.is_compatible_with(&ProtocolVersion::CURRENT));
+        assert!(ProtocolVersion { major: 1, minor: 3 }
+            .is_compatible_with(&ProtocolVersion { major: 1, minor: 0 }));
+        assert!(
+            !ProtocolVersion { major: 2, minor: 0 }.is_compatible_with(&ProtocolVersion::CURRENT)
+        );
     }
 }

@@ -14,6 +14,10 @@
 //! 3. [`Engine::stop`] — stop discovery, listener and runner; the database
 //!    closes with the struct (WAL checkpoint on drop keeps files tidy).
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod config;
 pub mod error;
 pub mod status;
@@ -22,11 +26,10 @@ pub use config::EngineConfig;
 pub use error::EngineError;
 pub use status::EngineStatus;
 
-use fs2::FileExt as _;
 use std::sync::Arc;
 use xamverse_backup::BackupService;
 use xamverse_discovery::{Discovery, ManualPeers};
-use xamverse_events::{EventBus, EngineEvent, EventKind};
+use xamverse_events::{EngineEvent, EventBus, EventKind};
 use xamverse_identity::DeviceIdentity;
 use xamverse_licensing::{LicenceConfig, LicenceService};
 use xamverse_network::{PeerServer, TrustDecision};
@@ -82,7 +85,8 @@ impl Engine {
         // Keystore → database key → encrypted database.
         let keystore = FileKeyStore::new(&config.data_dir)?;
         let db_key_bytes = keystore.get_or_create(DB_KEY_NAME, 32)?;
-        let db_key = DatabaseKey::from_hex(&xamverse_storage::keystore::bytes_to_hex(&db_key_bytes))?;
+        let db_key =
+            DatabaseKey::from_hex(&xamverse_storage::keystore::bytes_to_hex(&db_key_bytes))?;
         let (db, migration_report) = Database::open(config.data_dir.join("engine.xamdb"), &db_key)?;
         let db = Arc::new(db);
 
@@ -94,10 +98,7 @@ impl Engine {
         )?);
 
         let events = Arc::new(EventBus::new());
-        let auth = Arc::new(AuthService::with_config(
-            db.clone(),
-            AuthConfig::default(),
-        ));
+        let auth = Arc::new(AuthService::with_config(db.clone(), AuthConfig::default()));
         let authz = Arc::new(Authz::new(db.clone()));
         let sync = SyncEngine::new(db.clone(), identity.clone(), events.clone());
         let conflicts = Arc::new(ConflictService::new(db.clone(), events.clone()));
@@ -179,9 +180,11 @@ impl Engine {
             let conn = engine.db.lock();
             let schools = xamverse_storage::repos::SchoolsRepo::list(&conn).unwrap_or_default();
             for school in schools {
-                if let Ok(Some(trust)) =
-                    xamverse_storage::repos::TrustRepo::get(&conn, &school.school_id, &peer.card.device_id)
-                {
+                if let Ok(Some(trust)) = xamverse_storage::repos::TrustRepo::get(
+                    &conn,
+                    &school.school_id,
+                    &peer.card.device_id,
+                ) {
                     return match trust.state {
                         TrustState::Trusted => TrustDecision::Allow,
                         TrustState::Pending => TrustDecision::AllowLimited,
@@ -201,7 +204,10 @@ impl Engine {
         .await?;
         let bound = server.bind_addr;
         *self.server.lock().await = Some(server);
-        *self.peer_addr.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(bound);
+        *self
+            .peer_addr
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(bound);
 
         // Durable job runner.
         let runner = self.sync.spawn_job_runner();
@@ -225,10 +231,11 @@ impl Engine {
             }
         }
 
-        self.events.publish(EngineEvent::new(EventKind::JobStatusChanged {
-            job_id: "engine".into(),
-            status: "started".into(),
-        }));
+        self.events
+            .publish(EngineEvent::new(EventKind::JobStatusChanged {
+                job_id: "engine".into(),
+                status: "started".into(),
+            }));
         Ok(())
     }
 
@@ -248,7 +255,12 @@ impl Engine {
 
     /// Enroll this installation for a school (local act; replication of
     /// school identity/records happens through sync).
-    pub fn enroll_school(&self, school_id: &str, name: &str, by_user: &str) -> Result<(), EngineError> {
+    pub fn enroll_school(
+        &self,
+        school_id: &str,
+        name: &str,
+        by_user: &str,
+    ) -> Result<(), EngineError> {
         self.db.tx(|conn| {
             xamverse_storage::repos::SchoolsRepo::enroll(conn, school_id, name)?;
             xamverse_security::seed_builtin_roles(conn, school_id)?;
@@ -265,15 +277,16 @@ impl Engine {
     }
 
     /// Peer diagnostics: connect to a node and time the round trip.
-    pub async fn ping_peer(&self, addr: std::net::SocketAddr) -> Result<std::time::Duration, EngineError> {
+    pub async fn ping_peer(
+        &self,
+        addr: std::net::SocketAddr,
+    ) -> Result<std::time::Duration, EngineError> {
         let started = std::time::Instant::now();
-        let mut conn = xamverse_network::PeerClient::connect(
-            addr,
-            &self.identity,
-            &self.sync.trust_policy(),
-        )
-        .await?;
-        self.sync.record_peer_address(&conn.peer.card.device_id, addr);
+        let mut conn =
+            xamverse_network::PeerClient::connect(addr, &self.identity, &self.sync.trust_policy())
+                .await?;
+        self.sync
+            .record_peer_address(&conn.peer.card.device_id, addr);
         let reply = conn
             .request(xamverse_network::Envelope::new(
                 "ping",
@@ -281,7 +294,10 @@ impl Engine {
             ))
             .await?;
         if reply.kind != "pong" {
-            return Err(EngineError::PeerProtocol(format!("expected pong, got {}", reply.kind)));
+            return Err(EngineError::PeerProtocol(format!(
+                "expected pong, got {}",
+                reply.kind
+            )));
         }
         conn.channel.goodbye().await;
         Ok(started.elapsed())
@@ -386,7 +402,9 @@ mod tests {
             ..Default::default()
         })
         .unwrap();
-        engine.enroll_school("school-1", "Demo School", "owner-1").unwrap();
+        engine
+            .enroll_school("school-1", "Demo School", "owner-1")
+            .unwrap();
         let conn = engine.db.lock();
         let roles = xamverse_storage::repos::SchoolsRepo::list(&conn).unwrap();
         assert_eq!(roles.len(), 1);

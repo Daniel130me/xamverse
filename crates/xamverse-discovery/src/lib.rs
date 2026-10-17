@@ -12,6 +12,10 @@
 //! the device identity so a resolved service is actionable without an extra
 //! round trip. Duplicate advertisements for one device id are deduplicated.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
@@ -80,6 +84,8 @@ pub enum DiscoveryError {
     Storage(#[from] xamverse_storage::StorageError),
     #[error("invalid peer address: {0}")]
     InvalidAddress(String),
+    #[error("failed to spawn the mDNS browse thread: {0}")]
+    Spawn(String),
 }
 
 /// Live discovery state: what we advertise and what we have seen.
@@ -88,7 +94,6 @@ pub struct Discovery {
     daemon: Option<mdns_sd::ServiceDaemon>,
     seen: Arc<Mutex<HashMap<String, PeerAdvertisement>>>,
     found_tx: broadcast::Sender<PeerAdvertisement>,
-    browse_guard: Mutex<Option<mdns_sd::Receiver<mdns_sd::ServiceEvent>>>,
 }
 
 impl Discovery {
@@ -96,11 +101,14 @@ impl Discovery {
     /// when the network blocks it (common on school Wi-Fi), callers use
     /// [`Discovery::without_multicast`] plus manual peers instead.
     pub fn start(advertise: PeerAdvertisement) -> Result<Self, DiscoveryError> {
-        let daemon = mdns_sd::ServiceDaemon::new()
-            .map_err(|e| DiscoveryError::Mdns(e.to_string()))?;
+        let daemon =
+            mdns_sd::ServiceDaemon::new().map_err(|e| DiscoveryError::Mdns(e.to_string()))?;
 
         let instance = format!("{}.{}", advertise.device_id, SERVICE_TYPE);
-        let host = format!("xamverse-{}.local.", &advertise.device_id[..8.min(advertise.device_id.len())]);
+        let host = format!(
+            "xamverse-{}.local.",
+            &advertise.device_id[..8.min(advertise.device_id.len())]
+        );
         // Advertise on the first detectable local address; multi-NIC schools
         // can add manual peers — a documented limitation (KNOWN_LIMITATIONS.md).
         let primary_ip = advertise
@@ -143,7 +151,9 @@ impl Discovery {
                             .map(|kv| (kv.key().to_string(), kv.val_str().to_string()))
                             .collect();
                         let addresses: Vec<IpAddr> = info.get_addresses().iter().copied().collect();
-                        if let Some(ad) = PeerAdvertisement::from_txt(&props, info.get_port(), addresses) {
+                        if let Some(ad) =
+                            PeerAdvertisement::from_txt(&props, info.get_port(), addresses)
+                        {
                             let is_new = seen_for_thread
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -157,14 +167,13 @@ impl Discovery {
                     }
                 }
             })
-            .expect("browse thread spawns");
+            .map_err(|e| DiscoveryError::Spawn(e.to_string()))?;
 
         Ok(Self {
             my_advertisement: advertise,
             daemon: Some(daemon),
             seen,
             found_tx,
-            browse_guard: Mutex::new(None),
         })
     }
 
@@ -176,7 +185,6 @@ impl Discovery {
             daemon: None,
             seen: Arc::new(Mutex::new(HashMap::new())),
             found_tx,
-            browse_guard: Mutex::new(None),
         }
     }
 
@@ -203,10 +211,9 @@ impl Discovery {
     pub fn stop(&self) {
         if let Some(daemon) = &self.daemon {
             let _ = daemon.stop_browse(SERVICE_TYPE);
-            let _ = daemon.unregister(format!(
-                "{}.{}",
-                self.my_advertisement.device_id, SERVICE_TYPE
-            ).as_str());
+            let _ = daemon.unregister(
+                format!("{}.{}", self.my_advertisement.device_id, SERVICE_TYPE).as_str(),
+            );
         }
     }
 
@@ -241,9 +248,9 @@ pub struct ManualPeers {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct ManualEntry {
-    key: String,
-    addr: String,
+pub struct ManualEntry {
+    pub key: String,
+    pub addr: String,
 }
 
 const KV_KEY: &str = "discovery.manual_peers";
@@ -286,13 +293,19 @@ impl ManualPeers {
         Ok(removed)
     }
 
-    fn load(&self, conn: &xamverse_storage::Connection) -> xamverse_storage::StorageResult<Vec<ManualEntry>> {
-        let raw = xamverse_storage::repos::KvRepo::get(conn, KV_KEY)?
-            .unwrap_or_else(|| "[]".to_string());
+    fn load(
+        &self,
+        conn: &xamverse_storage::Connection,
+    ) -> xamverse_storage::StorageResult<Vec<ManualEntry>> {
+        let raw =
+            xamverse_storage::repos::KvRepo::get(conn, KV_KEY)?.unwrap_or_else(|| "[]".to_string());
         Ok(serde_json::from_str(&raw)?)
     }
 
-    fn save(conn: &xamverse_storage::Connection, entries: &[ManualEntry]) -> xamverse_storage::StorageResult<()> {
+    fn save(
+        conn: &xamverse_storage::Connection,
+        entries: &[ManualEntry],
+    ) -> xamverse_storage::StorageResult<()> {
         xamverse_storage::repos::KvRepo::set(conn, KV_KEY, &serde_json::to_string(entries)?)?;
         Ok(())
     }

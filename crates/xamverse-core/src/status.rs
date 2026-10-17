@@ -1,7 +1,7 @@
 //! Diagnostics read-model (CLI `diagnostics`, web `/_diagnostics`, Tauri).
 
-use serde::Serialize;
 use crate::Engine;
+use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct EngineStatus {
@@ -80,11 +80,7 @@ impl Engine {
         let sync_queue = {
             let conn = self.db.lock();
             SyncQueueSummary {
-                queued: count_where(
-                    &conn,
-                    "sync_jobs",
-                    "status IN ('queued','running')",
-                ),
+                queued: count_where(&conn, "sync_jobs", "status IN ('queued','running')"),
                 failed: count_where(&conn, "sync_jobs", "status = 'failed'"),
                 completed: count_where(&conn, "sync_jobs", "status = 'completed'"),
             }

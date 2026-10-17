@@ -82,8 +82,10 @@ impl SecureKeyStore for FileKeyStore {
             return Ok(None);
         }
         let hex = fs::read_to_string(path)?;
-        let bytes = hex_to_bytes(hex.trim())
-            .ok_or_else(|| StorageError::InvalidValue { field: "key file", reason: "not valid hex".into() })?;
+        let bytes = hex_to_bytes(hex.trim()).ok_or_else(|| StorageError::InvalidValue {
+            field: "key file",
+            reason: "not valid hex".into(),
+        })?;
         Ok(Some(bytes))
     }
 }
@@ -111,7 +113,10 @@ pub struct MemoryKeyStore {
 
 impl SecureKeyStore for MemoryKeyStore {
     fn get_or_create(&self, name: &str, len: usize) -> StorageResult<Vec<u8>> {
-        let mut map = self.secrets.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut map = self
+            .secrets
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         Ok(map
             .entry(name.to_string())
             .or_insert_with(|| crate::random_bytes(len))
@@ -133,7 +138,7 @@ pub fn bytes_to_hex(bytes: &[u8]) -> String {
 }
 
 pub fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return None;
     }
     (0..hex.len() / 2)

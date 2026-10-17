@@ -103,7 +103,9 @@ pub async fn write_noise_frame(
     if ciphertext.len() > MAX_CIPHERTEXT_FRAME - 4 {
         return Err(FrameError::Oversized(ciphertext.len()));
     }
-    stream.write_all(&(ciphertext.len() as u32).to_be_bytes()).await?;
+    stream
+        .write_all(&(ciphertext.len() as u32).to_be_bytes())
+        .await?;
     stream.write_all(ciphertext).await?;
     stream.flush().await?;
     Ok(())

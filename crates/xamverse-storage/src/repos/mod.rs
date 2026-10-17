@@ -18,8 +18,10 @@ mod session;
 mod sync;
 mod users;
 
-pub use backup::{BackupRow, BackupsRepo, BackgroundJobRow, BackgroundJobsRepo, UpdateHistoryRepo, UpdateStateRow};
-pub use conflict::{ConflictRow, ConflictsRepo, ConflictStatus, ConflictStrategy};
+pub use backup::{
+    BackgroundJobRow, BackgroundJobsRepo, BackupRow, BackupsRepo, UpdateHistoryRepo, UpdateStateRow,
+};
+pub use conflict::{ConflictRow, ConflictStatus, ConflictStrategy, ConflictsRepo};
 pub use exams::{
     AttemptEventRow, AttemptRow, AttemptsRepo, CollectionReceiptRow, CollectionReceiptsRepo,
     PackageRow, PackagesRepo,
@@ -66,7 +68,8 @@ impl KvRepo {
     }
 
     pub fn set(conn: &Connection, key: &str, value: &str) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO kv (key, value) VALUES (?1, ?2)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             rusqlite::params![key, value],
@@ -96,7 +99,8 @@ pub struct SchoolsRepo;
 
 impl SchoolsRepo {
     pub fn enroll(conn: &Connection, school_id: &str, name: &str) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO schools (school_id, name, enrolled_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(school_id) DO NOTHING",
             rusqlite::params![school_id, name, crate::now_rfc3339()],
@@ -148,13 +152,21 @@ impl SchoolsRepo {
         Ok(rows)
     }
 
-    pub fn update_settings(conn: &Connection, school_id: &str, settings_json: &str) -> StorageResult<()> {
-        let changed = exec(conn, 
+    pub fn update_settings(
+        conn: &Connection,
+        school_id: &str,
+        settings_json: &str,
+    ) -> StorageResult<()> {
+        let changed = exec(
+            conn,
             "UPDATE schools SET settings_json = ?2 WHERE school_id = ?1",
             rusqlite::params![school_id, settings_json],
         )?;
         if changed == 0 {
-            return Err(StorageError::NotFound { entity: "school", id: school_id.to_string() });
+            return Err(StorageError::NotFound {
+                entity: "school",
+                id: school_id.to_string(),
+            });
         }
         Ok(())
     }

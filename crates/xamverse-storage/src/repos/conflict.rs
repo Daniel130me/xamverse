@@ -70,7 +70,8 @@ pub struct ConflictsRepo;
 
 impl ConflictsRepo {
     pub fn insert(conn: &Connection, conflict: &ConflictRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO conflicts
                 (conflict_id, school_id, category, object_id, kind, incoming_op_id,
                  local_op_id, incoming_payload_json, strategy, status, detected_at)
@@ -109,23 +110,26 @@ impl ConflictsRepo {
         school_id: &str,
         status: Option<ConflictStatus>,
     ) -> StorageResult<Vec<ConflictRow>> {
-        let (sql, with_status) = match status {
-            Some(_) => (
-                format!("{} WHERE school_id = ?1 AND status = ?2 ORDER BY detected_at DESC", Self::SELECT),
-                true,
+        let sql = match status {
+            Some(_) => format!(
+                "{} WHERE school_id = ?1 AND status = ?2 ORDER BY detected_at DESC",
+                Self::SELECT
             ),
-            None => (
-                format!("{} WHERE school_id = ?1 ORDER BY detected_at DESC", Self::SELECT),
-                false,
+            None => format!(
+                "{} WHERE school_id = ?1 ORDER BY detected_at DESC",
+                Self::SELECT
             ),
         };
         let mut stmt = conn.prepare(&sql)?;
-        let rows = if with_status {
-            stmt.query_map(params![school_id, status.unwrap().as_str()], Self::map_row)?
-                .collect::<Result<Vec<_>, _>>()?
-        } else {
-            stmt.query_map([school_id], Self::map_row)?
-                .collect::<Result<Vec<_>, _>>()?
+        // The Some/None split mirrors the two SQL shapes; matching keeps the
+        // parameter binding total (no Option unwrap) at zero cost.
+        let rows = match status {
+            Some(s) => stmt
+                .query_map(params![school_id, s.as_str()], Self::map_row)?
+                .collect::<Result<Vec<_>, _>>()?,
+            None => stmt
+                .query_map([school_id], Self::map_row)?
+                .collect::<Result<Vec<_>, _>>()?,
         };
         Ok(rows)
     }
@@ -138,7 +142,8 @@ impl ConflictsRepo {
         resolution: &str,
         resolved_by: &str,
     ) -> StorageResult<()> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "UPDATE conflicts
              SET status = 'resolved', resolution = ?2, resolved_by = ?3, resolved_at = ?4
              WHERE conflict_id = ?1 AND status = 'open'",
@@ -154,7 +159,8 @@ impl ConflictsRepo {
     }
 
     pub fn defer(conn: &Connection, conflict_id: &str) -> StorageResult<()> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "UPDATE conflicts SET status = 'deferred' WHERE conflict_id = ?1 AND status = 'open'",
             params![conflict_id],
         )?;
@@ -179,8 +185,12 @@ impl ConflictsRepo {
             "quarantine" => ConflictStrategy::Quarantine,
             "manual" => ConflictStrategy::Manual,
             other => {
-                return Err(rusqlite::Error::ToSqlConversionFailure(Box::<dyn std::error::Error + Send + Sync>::from(
-                    format!("unknown conflict strategy {other}"),
+                return Err(rusqlite::Error::ToSqlConversionFailure(Box::<
+                    dyn std::error::Error + Send + Sync,
+                >::from(
+                    format!(
+                    "unknown conflict strategy {other}"
+                )
                 )))
             }
         };
@@ -189,8 +199,12 @@ impl ConflictsRepo {
             "resolved" => ConflictStatus::Resolved,
             "deferred" => ConflictStatus::Deferred,
             other => {
-                return Err(rusqlite::Error::ToSqlConversionFailure(Box::<dyn std::error::Error + Send + Sync>::from(
-                    format!("unknown conflict status {other}"),
+                return Err(rusqlite::Error::ToSqlConversionFailure(Box::<
+                    dyn std::error::Error + Send + Sync,
+                >::from(
+                    format!(
+                    "unknown conflict status {other}"
+                )
                 )))
             }
         };

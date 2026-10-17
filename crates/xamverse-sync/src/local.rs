@@ -30,26 +30,21 @@ pub struct LocalOps {
 
 impl LocalOps {
     pub fn new(db: Arc<Database>, identity: Arc<DeviceIdentity>, events: Arc<EventBus>) -> Self {
-        Self { db, identity, events }
+        Self {
+            db,
+            identity,
+            events,
+        }
     }
 
     /// Current Lamport clock for a school (0 when unseen).
     pub fn lamport(&self, school_id: &str) -> StorageResult<i64> {
         let conn = self.db.lock();
-        Ok(KvRepo::get(&conn, &format!("{LAMPORT_KEY_PREFIX}{school_id}"))?
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0))
-    }
-
-    fn advance_lamport(&self, school_id: &str, seen: i64) -> StorageResult<i64> {
-        let conn = self.db.lock();
-        let key = format!("{LAMPORT_KEY_PREFIX}{school_id}");
-        let current: i64 = KvRepo::get(&conn, &key)?
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
-        let next = current.max(seen) + 1;
-        KvRepo::set(&conn, &key, &next.to_string())?;
-        Ok(next)
+        Ok(
+            KvRepo::get(&conn, &format!("{LAMPORT_KEY_PREFIX}{school_id}"))?
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+        )
     }
 
     /// Create, sign, persist and enqueue a local change.
@@ -69,10 +64,11 @@ impl LocalOps {
         target_device_ids: &[String],
         expected_base_revision: Option<i64>,
     ) -> StorageResult<SyncOpWire> {
-        let policy = crate::category::policy_for(category).ok_or_else(|| StorageError::InvalidValue {
-            field: "category",
-            reason: format!("unknown category {category}"),
-        })?;
+        let policy =
+            crate::category::policy_for(category).ok_or_else(|| StorageError::InvalidValue {
+                field: "category",
+                reason: format!("unknown category {category}"),
+            })?;
 
         if payload_json.is_none() && blob_sha256.is_none() {
             return Err(StorageError::InvalidValue {
@@ -84,10 +80,34 @@ impl LocalOps {
             if payload.len() > MAX_INLINE_PAYLOAD {
                 return Err(StorageError::InvalidValue {
                     field: "payload",
-                    reason: format!("inline payload exceeds {} bytes; use a blob", MAX_INLINE_PAYLOAD),
+                    reason: format!(
+                        "inline payload exceeds {} bytes; use a blob",
+                        MAX_INLINE_PAYLOAD
+                    ),
                 });
             }
         }
+
+        // The one-of guard above guarantees one of the two sources; make
+        // that total here instead of unwrapping inside the transaction.
+        let payload_sha256 = match (payload_json, blob_sha256) {
+            (Some(payload), _) => {
+                let mut hasher = Sha256::new();
+                hasher.update(payload.as_bytes());
+                hasher
+                    .finalize()
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect()
+            }
+            (None, Some(sha)) => sha.to_string(),
+            (None, None) => {
+                return Err(StorageError::InvalidValue {
+                    field: "payload",
+                    reason: "one of payload_json or blob_sha256 is required".into(),
+                })
+            }
+        };
 
         let op_id = uuid::Uuid::now_v7().to_string();
 
@@ -110,17 +130,6 @@ impl LocalOps {
             }
             let revision = current + 1;
             let lamport = self.advance_lamport_local(conn, school_id)?;
-
-            // Inline payload hashes its bytes; blob-only ops hash the
-            // content address (see SyncOpWire::verify_payload_hash).
-            let payload_sha256 = match payload_json {
-                Some(payload) => {
-                    let mut hasher = Sha256::new();
-                    hasher.update(payload.as_bytes());
-                    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
-                }
-                None => blob_sha256.expect("validated above").to_string(),
-            };
 
             let unsigned = SyncOpWire {
                 op_id: op_id.clone(),
@@ -209,15 +218,21 @@ impl LocalOps {
         })?;
 
         self.events.publish(
-            EngineEvent::new(EventKind::SyncRequested { job_id: op_id.clone() })
-                .with_school(school_id)
-                .with_device(self.identity.device_id.clone()),
+            EngineEvent::new(EventKind::SyncRequested {
+                job_id: op_id.clone(),
+            })
+            .with_school(school_id)
+            .with_device(self.identity.device_id.clone()),
         );
         Ok(wire)
     }
 
     /// Local clock advance shares the transaction with the op insert.
-    fn advance_lamport_local(&self, conn: &rusqlite::Connection, school_id: &str) -> StorageResult<i64> {
+    fn advance_lamport_local(
+        &self,
+        conn: &rusqlite::Connection,
+        school_id: &str,
+    ) -> StorageResult<i64> {
         let key = format!("{LAMPORT_KEY_PREFIX}{school_id}");
         let current: i64 = KvRepo::get(conn, &key)?
             .and_then(|v| v.parse().ok())
@@ -245,7 +260,12 @@ impl LocalOps {
     }
 
     /// Materialized object read for higher layers (views, collection).
-    pub fn object(&self, school_id: &str, category: &str, object_id: &str) -> StorageResult<Option<ObjectRow>> {
+    pub fn object(
+        &self,
+        school_id: &str,
+        category: &str,
+        object_id: &str,
+    ) -> StorageResult<Option<ObjectRow>> {
         let conn = self.db.lock();
         ObjectsRepo::get(&conn, school_id, category, object_id)
     }
@@ -255,15 +275,22 @@ impl LocalOps {
 mod tests {
     use super::*;
     use xamverse_storage::repos::SchoolsRepo;
-use xamverse_storage::{DatabaseKey, MemoryKeyStore};
+    use xamverse_storage::{DatabaseKey, MemoryKeyStore};
 
-    fn setup() -> (tempfile::TempDir, Arc<Database>, Arc<DeviceIdentity>, Arc<EventBus>) {
+    fn setup() -> (
+        tempfile::TempDir,
+        Arc<Database>,
+        Arc<DeviceIdentity>,
+        Arc<EventBus>,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let (db, _) = Database::open(dir.path().join("s.xamdb"), &DatabaseKey::generate()).unwrap();
         let db = Arc::new(db);
-        db.tx(|conn| SchoolsRepo::enroll(conn, "s1", "School One")).unwrap();
+        db.tx(|conn| SchoolsRepo::enroll(conn, "s1", "School One"))
+            .unwrap();
         let keystore = MemoryKeyStore::default();
-        let identity = Arc::new(DeviceIdentity::load_or_create(&keystore, "NodeA", "linux").unwrap());
+        let identity =
+            Arc::new(DeviceIdentity::load_or_create(&keystore, "NodeA", "linux").unwrap());
         let events = Arc::new(EventBus::new());
         (dir, db, identity, events)
     }
@@ -273,8 +300,30 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         let (_d, db, identity, events) = setup();
         let local = LocalOps::new(db.clone(), identity.clone(), events);
 
-        let op1 = local.create("s1", "question_bank", "q1", Some(r#"{"v":1}"#), None, false, &[], None).unwrap();
-        let op2 = local.create("s1", "question_bank", "q1", Some(r#"{"v":2}"#), None, false, &[], None).unwrap();
+        let op1 = local
+            .create(
+                "s1",
+                "question_bank",
+                "q1",
+                Some(r#"{"v":1}"#),
+                None,
+                false,
+                &[],
+                None,
+            )
+            .unwrap();
+        let op2 = local
+            .create(
+                "s1",
+                "question_bank",
+                "q1",
+                Some(r#"{"v":2}"#),
+                None,
+                false,
+                &[],
+                None,
+            )
+            .unwrap();
         assert_eq!(op1.revision, 1);
         assert_eq!(op2.revision, 2);
         assert_eq!(op2.base_revision, 1);
@@ -290,9 +339,29 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
     fn stale_base_revision_is_refused() {
         let (_d, db, identity, events) = setup();
         let local = LocalOps::new(db.clone(), identity.clone(), events);
-        local.create("s1", "question_bank", "q2", Some(r#"{}"#), None, false, &[], None).unwrap();
+        local
+            .create(
+                "s1",
+                "question_bank",
+                "q2",
+                Some(r#"{}"#),
+                None,
+                false,
+                &[],
+                None,
+            )
+            .unwrap();
         // Author claims base 0 while object is at revision 1.
-        let err = local.create("s1", "question_bank", "q2", Some(r#"{}"#), None, false, &[], Some(0));
+        let err = local.create(
+            "s1",
+            "question_bank",
+            "q2",
+            Some(r#"{}"#),
+            None,
+            false,
+            &[],
+            Some(0),
+        );
         assert!(matches!(err, Err(StorageError::Constraint(_))));
     }
 
@@ -300,8 +369,28 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
     fn immutable_category_rejects_second_revision() {
         let (_d, db, identity, events) = setup();
         let local = LocalOps::new(db.clone(), identity.clone(), events);
-        local.create("s1", "exam_attempt", "att-1", Some(r#"{}"#), None, false, &[], None).unwrap();
-        let err = local.create("s1", "exam_attempt", "att-1", Some(r#"{}"#), None, false, &[], None);
+        local
+            .create(
+                "s1",
+                "exam_attempt",
+                "att-1",
+                Some(r#"{}"#),
+                None,
+                false,
+                &[],
+                None,
+            )
+            .unwrap();
+        let err = local.create(
+            "s1",
+            "exam_attempt",
+            "att-1",
+            Some(r#"{}"#),
+            None,
+            false,
+            &[],
+            None,
+        );
         assert!(matches!(err, Err(StorageError::AlreadyExists { .. })));
     }
 
@@ -310,10 +399,23 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         let (_d, db, identity, events) = setup();
         let local = LocalOps::new(db.clone(), identity.clone(), events);
         let targets = vec!["dev-b".to_string(), "dev-c".to_string()];
-        local.create("s1", "school_settings", "cfg", Some(r#"{}"#), None, false, &targets, None).unwrap();
+        local
+            .create(
+                "s1",
+                "school_settings",
+                "cfg",
+                Some(r#"{}"#),
+                None,
+                false,
+                &targets,
+                None,
+            )
+            .unwrap();
         let conn = db.lock();
         let jobs = JobsRepo::list(&conn, "s1", &[], 100).unwrap();
         assert_eq!(jobs.len(), 2);
-        assert!(jobs.iter().all(|j| j.kind == xamverse_storage::repos::JobKind::PushOp));
+        assert!(jobs
+            .iter()
+            .all(|j| j.kind == xamverse_storage::repos::JobKind::PushOp));
     }
 }

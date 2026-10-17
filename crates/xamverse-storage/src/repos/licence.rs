@@ -34,7 +34,8 @@ impl LicencesRepo {
     /// Store a newly imported certificate. The most recent import wins;
     /// history is retained via the audit log.
     pub fn put(conn: &Connection, licence: &LicenceRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO licences
                 (licence_id, school_id, plan, status, device_id, device_fingerprint,
                  features_json, device_limit, issued_at, not_before, expires_at,
@@ -82,7 +83,8 @@ impl LicencesRepo {
     }
 
     pub fn update_status(conn: &Connection, licence_id: &str, status: &str) -> StorageResult<()> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "UPDATE licences SET status = ?2 WHERE licence_id = ?1",
             params![licence_id, status],
         )?;

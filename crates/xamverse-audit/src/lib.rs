@@ -9,6 +9,10 @@
 //! chain over append order — the same technique as the per-attempt event
 //! chains in storage.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 use xamverse_storage::StorageResult;
@@ -87,17 +91,7 @@ pub fn record(conn: &Connection, event: &AuditEvent) -> StorageResult<AuditRow> 
             |row| row.get(0),
         )
         .unwrap_or_else(|_| String::new()); // empty = genesis
-    let hash = chain_hash(
-        &prev_hash,
-        &event.event_id,
-        event.school_id.as_deref(),
-        event.actor_user.as_deref(),
-        event.actor_device.as_deref(),
-        &event.action,
-        event.target.as_deref(),
-        event.detail_json.as_deref(),
-        &at,
-    );
+    let hash = chain_hash(ChainInput::of(&prev_hash, event, &at));
     conn.execute(
         "INSERT INTO audit_events
             (event_id, school_id, actor_user, actor_device, action, target,
@@ -156,21 +150,33 @@ pub fn verify_chain(conn: &Connection) -> StorageResult<bool> {
         .collect::<Result<Vec<_>, rusqlite::Error>>()?;
 
     let mut prev = String::new();
-    for (event_id, school_id, actor_user, actor_device, action, target, detail, at, stored_prev, stored_hash) in rows {
+    for (
+        event_id,
+        school_id,
+        actor_user,
+        actor_device,
+        action,
+        target,
+        detail,
+        at,
+        stored_prev,
+        stored_hash,
+    ) in rows
+    {
         if stored_prev != prev {
             return Ok(false);
         }
-        let expected = chain_hash(
-            &prev,
-            &event_id,
-            school_id.as_deref(),
-            actor_user.as_deref(),
-            actor_device.as_deref(),
-            &action,
-            target.as_deref(),
-            detail.as_deref(),
-            &at,
-        );
+        let expected = chain_hash(ChainInput {
+            prev_hash: &prev,
+            event_id: &event_id,
+            school_id: school_id.as_deref(),
+            actor_user: actor_user.as_deref(),
+            actor_device: actor_device.as_deref(),
+            action: &action,
+            target: target.as_deref(),
+            detail_json: detail.as_deref(),
+            at: &at,
+        });
         if expected != stored_hash {
             return Ok(false);
         }
@@ -213,34 +219,70 @@ pub fn query(conn: &Connection, filter: &AuditQuery) -> StorageResult<Vec<AuditR
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map(rusqlite::params_from_iter(bind.iter().map(|b| b.as_ref())), |row| {
-            Ok(AuditRow {
-                seq: row.get(0)?,
-                event_id: row.get(1)?,
-                school_id: row.get(2)?,
-                actor_user: row.get(3)?,
-                actor_device: row.get(4)?,
-                action: row.get(5)?,
-                target: row.get(6)?,
-                detail_json: row.get(7)?,
-                at: row.get(8)?,
-            })
-        })?
+        .query_map(
+            rusqlite::params_from_iter(bind.iter().map(|b| b.as_ref())),
+            |row| {
+                Ok(AuditRow {
+                    seq: row.get(0)?,
+                    event_id: row.get(1)?,
+                    school_id: row.get(2)?,
+                    actor_user: row.get(3)?,
+                    actor_device: row.get(4)?,
+                    action: row.get(5)?,
+                    target: row.get(6)?,
+                    detail_json: row.get(7)?,
+                    at: row.get(8)?,
+                })
+            },
+        )?
         .collect::<Result<Vec<_>, rusqlite::Error>>()?;
     Ok(rows)
 }
 
-fn chain_hash(
-    prev_hash: &str,
-    event_id: &str,
-    school_id: Option<&str>,
-    actor_user: Option<&str>,
-    actor_device: Option<&str>,
-    action: &str,
-    target: Option<&str>,
-    detail_json: Option<&str>,
-    at: &str,
-) -> String {
+/// Everything the audit hash covers, grouped so `chain_hash` takes one
+/// argument instead of nine (clippy::too_many_arguments) and call sites
+/// cannot accidentally swap two same-typed fields.
+struct ChainInput<'a> {
+    prev_hash: &'a str,
+    event_id: &'a str,
+    school_id: Option<&'a str>,
+    actor_user: Option<&'a str>,
+    actor_device: Option<&'a str>,
+    action: &'a str,
+    target: Option<&'a str>,
+    detail_json: Option<&'a str>,
+    at: &'a str,
+}
+
+impl<'a> ChainInput<'a> {
+    /// Collect the fields of a freshly-timestamped event.
+    fn of(prev_hash: &'a str, event: &'a AuditEvent, at: &'a str) -> Self {
+        Self {
+            prev_hash,
+            event_id: &event.event_id,
+            school_id: event.school_id.as_deref(),
+            actor_user: event.actor_user.as_deref(),
+            actor_device: event.actor_device.as_deref(),
+            action: &event.action,
+            target: event.target.as_deref(),
+            detail_json: event.detail_json.as_deref(),
+            at,
+        }
+    }
+}
+
+fn chain_hash(input: ChainInput<'_>) -> String {
+    let ChainInput {
+        prev_hash,
+        event_id,
+        school_id,
+        actor_user,
+        actor_device,
+        action,
+        target,
+        detail_json,
+        at,
+    } = input;
     let mut hasher = Sha256::new();
     hasher.update(prev_hash.as_bytes());
     hasher.update(b"|");
@@ -269,12 +311,13 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xamverse_storage::{Database, DatabaseKey};
     use tempfile::tempdir;
+    use xamverse_storage::{Database, DatabaseKey};
 
     fn db() -> (tempfile::TempDir, Database) {
         let dir = tempdir().unwrap();
-        let (db, _) = Database::open(dir.path().join("audit.xamdb"), &DatabaseKey::generate()).unwrap();
+        let (db, _) =
+            Database::open(dir.path().join("audit.xamdb"), &DatabaseKey::generate()).unwrap();
         (dir, db)
     }
 
@@ -283,7 +326,11 @@ mod tests {
         let (_dir, db) = db();
         let conn = db.lock();
         for i in 0..5 {
-            record(&conn, &AuditEvent::new(format!("auth.login:{i}")).with_school("school-1")).unwrap();
+            record(
+                &conn,
+                &AuditEvent::new(format!("auth.login:{i}")).with_school("school-1"),
+            )
+            .unwrap();
         }
         assert!(verify_chain(&conn).unwrap());
     }
@@ -311,7 +358,8 @@ mod tests {
         record(&conn, &AuditEvent::new("a")).unwrap();
         record(&conn, &AuditEvent::new("b")).unwrap();
         record(&conn, &AuditEvent::new("c")).unwrap();
-        conn.execute("DELETE FROM audit_events WHERE seq = 2", []).unwrap();
+        conn.execute("DELETE FROM audit_events WHERE seq = 2", [])
+            .unwrap();
         assert!(!verify_chain(&conn).unwrap());
     }
 
@@ -323,9 +371,23 @@ mod tests {
         record(&conn, &AuditEvent::new("devices.pair").with_school("s1")).unwrap();
         record(&conn, &AuditEvent::new("auth.login").with_school("s2")).unwrap();
 
-        let rows = query(&conn, &AuditQuery { school_id: Some("s1".into()), ..Default::default() }).unwrap();
+        let rows = query(
+            &conn,
+            &AuditQuery {
+                school_id: Some("s1".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(rows.len(), 2);
-        let rows = query(&conn, &AuditQuery { action_prefix: Some("auth.".into()), ..Default::default() }).unwrap();
+        let rows = query(
+            &conn,
+            &AuditQuery {
+                action_prefix: Some("auth.".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(rows.len(), 2);
         let rows = query(&conn, &AuditQuery::default()).unwrap();
         assert_eq!(rows.len(), 3);

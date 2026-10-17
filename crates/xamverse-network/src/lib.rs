@@ -6,13 +6,18 @@
 //! and supplies the trust policy from the pairing store — this crate never
 //! touches the database itself.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod framing;
 pub mod peer;
 pub mod secure;
 
 pub use framing::{Envelope, FrameError};
 pub use peer::{
-    HandlerFuture, PeerClient, PeerServerError, PeerConnection, PeerHandler, PeerServer, TrustDecision, TrustPolicy,
+    HandlerFuture, PeerClient, PeerConnection, PeerHandler, PeerServer, PeerServerError,
+    TrustDecision, TrustPolicy,
 };
 pub use secure::{AuthenticatedPeer, ChannelError, HandshakeRole, SecureChannel};
 

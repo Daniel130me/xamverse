@@ -18,6 +18,10 @@
 //!   disconnection" without persisting every event (durable records live in
 //!   the database: sync jobs, audit log, conflicts).
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, VecDeque};
 use tokio::sync::broadcast;
@@ -40,29 +44,91 @@ const HISTORY_CAPACITY: usize = 1000;
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum EventKind {
-    PeerDiscovered { device_id: String, name: String, addr: String },
-    PeerConnected { device_id: String },
-    PeerDisconnected { device_id: String },
-    DevicePaired { device_id: String, school_id: String },
-    DeviceRevoked { device_id: String, school_id: String },
-    SyncRequested { job_id: String },
-    SyncStarted { job_id: String },
-    TransferProgress { job_id: String, done: u64, total: u64 },
-    TransferPaused { job_id: String, reason: String },
-    TransferResumed { job_id: String },
-    TransferCompleted { job_id: String },
-    TransferFailed { job_id: String, error: String },
-    ConflictDetected { conflict_id: String, category: String, object_id: String },
-    ConflictResolved { conflict_id: String, resolution: String },
-    PackageReceived { package_id: String, school_id: String },
-    SubmissionReceived { attempt_id: String, from_device: String },
-    CollectionProgress { job_id: String, received: u64, expected: Option<u64> },
-    LicenceStatusChanged { status: String },
-    UpdateAvailable { version: String },
-    UpdateApplied { version: String },
-    BackupCompleted { backup_id: String },
-    SecurityAlert { alert: String },
-    JobStatusChanged { job_id: String, status: String },
+    PeerDiscovered {
+        device_id: String,
+        name: String,
+        addr: String,
+    },
+    PeerConnected {
+        device_id: String,
+    },
+    PeerDisconnected {
+        device_id: String,
+    },
+    DevicePaired {
+        device_id: String,
+        school_id: String,
+    },
+    DeviceRevoked {
+        device_id: String,
+        school_id: String,
+    },
+    SyncRequested {
+        job_id: String,
+    },
+    SyncStarted {
+        job_id: String,
+    },
+    TransferProgress {
+        job_id: String,
+        done: u64,
+        total: u64,
+    },
+    TransferPaused {
+        job_id: String,
+        reason: String,
+    },
+    TransferResumed {
+        job_id: String,
+    },
+    TransferCompleted {
+        job_id: String,
+    },
+    TransferFailed {
+        job_id: String,
+        error: String,
+    },
+    ConflictDetected {
+        conflict_id: String,
+        category: String,
+        object_id: String,
+    },
+    ConflictResolved {
+        conflict_id: String,
+        resolution: String,
+    },
+    PackageReceived {
+        package_id: String,
+        school_id: String,
+    },
+    SubmissionReceived {
+        attempt_id: String,
+        from_device: String,
+    },
+    CollectionProgress {
+        job_id: String,
+        received: u64,
+        expected: Option<u64>,
+    },
+    LicenceStatusChanged {
+        status: String,
+    },
+    UpdateAvailable {
+        version: String,
+    },
+    UpdateApplied {
+        version: String,
+    },
+    BackupCompleted {
+        backup_id: String,
+    },
+    SecurityAlert {
+        alert: String,
+    },
+    JobStatusChanged {
+        job_id: String,
+        status: String,
+    },
 }
 
 impl EventKind {
@@ -214,7 +280,11 @@ impl EventBus {
                 .history
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            history.iter().filter(|e| e.id > since_id).cloned().collect()
+            history
+                .iter()
+                .filter(|e| e.id > since_id)
+                .cloned()
+                .collect()
         };
         ReplayReceiver {
             replay: std::sync::Mutex::new(replay.into_iter().collect()),
@@ -257,7 +327,9 @@ mod tests {
     async fn subscribers_receive_published_events() {
         let bus = EventBus::new();
         let mut rx = bus.subscribe();
-        bus.publish(ev(EventKind::PeerConnected { device_id: "d1".into() }));
+        bus.publish(ev(EventKind::PeerConnected {
+            device_id: "d1".into(),
+        }));
         let got = rx.recv().await.expect("event");
         assert_eq!(got.kind.kind_name(), "peer.connected");
     }
@@ -265,9 +337,13 @@ mod tests {
     #[tokio::test]
     async fn subscribe_since_replays_missed_events() {
         let bus = EventBus::new();
-        let first = ev(EventKind::SyncStarted { job_id: "j1".into() });
+        let first = ev(EventKind::SyncStarted {
+            job_id: "j1".into(),
+        });
         bus.publish(first.clone());
-        let second = ev(EventKind::TransferCompleted { job_id: "j1".into() });
+        let second = ev(EventKind::TransferCompleted {
+            job_id: "j1".into(),
+        });
         bus.publish(second);
 
         // "Reconnect" having seen only the first event.
@@ -280,14 +356,19 @@ mod tests {
     fn history_is_bounded() {
         let bus = EventBus::new();
         for i in 0..(HISTORY_CAPACITY + 50) {
-            bus.publish(ev(EventKind::JobStatusChanged { job_id: format!("j{i}"), status: "queued".into() }));
+            bus.publish(ev(EventKind::JobStatusChanged {
+                job_id: format!("j{i}"),
+                status: "queued".into(),
+            }));
         }
         assert_eq!(bus.recent(usize::MAX).len(), HISTORY_CAPACITY);
     }
 
     #[test]
     fn events_serialize_with_stable_kind_names() {
-        let e = ev(EventKind::SecurityAlert { alert: "login spike".into() });
+        let e = ev(EventKind::SecurityAlert {
+            alert: "login spike".into(),
+        });
         let json = serde_json::to_value(&e).expect("serializable");
         assert_eq!(json["type"], "security_alert");
     }

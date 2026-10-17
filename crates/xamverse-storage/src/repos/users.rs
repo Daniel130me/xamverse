@@ -39,7 +39,8 @@ impl UsersRepo {
     /// responsible for revision checks; this is a plain upsert used inside
     /// their transactions.
     pub fn upsert(conn: &Connection, user: &UserRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO users (user_id, school_id, username, display_name, status,
                                 auth_hash, origin_device_id, revision, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
@@ -83,7 +84,11 @@ impl UsersRepo {
     }
 
     /// Authentication lookup — one indexed query (performance: no N+1).
-    pub fn get_by_username(conn: &Connection, school_id: &str, username: &str) -> StorageResult<Option<UserRow>> {
+    pub fn get_by_username(
+        conn: &Connection,
+        school_id: &str,
+        username: &str,
+    ) -> StorageResult<Option<UserRow>> {
         let mut stmt = conn.prepare_cached(
             "SELECT user_id, school_id, username, display_name, status, auth_hash,
                     origin_device_id, revision, updated_at
@@ -110,8 +115,14 @@ impl UsersRepo {
 
     /// Local credential change (password change / re-enrollment). Bumps the
     /// revision so the change replicates as a new signed op.
-    pub fn set_auth_hash(conn: &Connection, school_id: &str, user_id: &str, auth_hash: Option<&str>) -> StorageResult<i64> {
-        exec(conn, 
+    pub fn set_auth_hash(
+        conn: &Connection,
+        school_id: &str,
+        user_id: &str,
+        auth_hash: Option<&str>,
+    ) -> StorageResult<i64> {
+        exec(
+            conn,
             "UPDATE users
              SET auth_hash = ?3, revision = revision + 1, updated_at = ?4
              WHERE school_id = ?1 AND user_id = ?2",
@@ -125,14 +136,20 @@ impl UsersRepo {
         Ok(revision)
     }
 
-    pub fn set_status(conn: &Connection, school_id: &str, user_id: &str, status: &str) -> StorageResult<i64> {
+    pub fn set_status(
+        conn: &Connection,
+        school_id: &str,
+        user_id: &str,
+        status: &str,
+    ) -> StorageResult<i64> {
         if !matches!(status, "active" | "suspended" | "disabled") {
             return Err(StorageError::InvalidValue {
                 field: "status",
                 reason: format!("unknown user status {status}"),
             });
         }
-        exec(conn, 
+        exec(
+            conn,
             "UPDATE users SET status = ?3, revision = revision + 1, updated_at = ?4
              WHERE school_id = ?1 AND user_id = ?2",
             params![school_id, user_id, status, now_rfc3339()],
@@ -148,17 +165,28 @@ impl UsersRepo {
     // -- roles --------------------------------------------------------------
 
     pub fn upsert_role(conn: &Connection, role: &RoleRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO roles (role_id, school_id, name, is_builtin, revision)
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(school_id, role_id) DO UPDATE SET
                 name = excluded.name, revision = excluded.revision",
-            params![role.role_id, role.school_id, role.name, role.is_builtin as i64, role.revision],
+            params![
+                role.role_id,
+                role.school_id,
+                role.name,
+                role.is_builtin as i64,
+                role.revision
+            ],
         )?;
         Ok(())
     }
 
-    pub fn find_role_by_name(conn: &Connection, school_id: &str, name: &str) -> StorageResult<Option<RoleRow>> {
+    pub fn find_role_by_name(
+        conn: &Connection,
+        school_id: &str,
+        name: &str,
+    ) -> StorageResult<Option<RoleRow>> {
         let mut stmt = conn.prepare_cached(
             "SELECT role_id, school_id, name, is_builtin, revision
              FROM roles WHERE school_id = ?1 AND name = ?2",
@@ -176,8 +204,15 @@ impl UsersRepo {
         }
     }
 
-    pub fn grant_role(conn: &Connection, school_id: &str, user_id: &str, role_id: &str, granted_by: Option<&str>) -> StorageResult<()> {
-        exec(conn, 
+    pub fn grant_role(
+        conn: &Connection,
+        school_id: &str,
+        user_id: &str,
+        role_id: &str,
+        granted_by: Option<&str>,
+    ) -> StorageResult<()> {
+        exec(
+            conn,
             "INSERT OR IGNORE INTO user_roles (school_id, user_id, role_id, granted_by)
              VALUES (?1, ?2, ?3, ?4)",
             params![school_id, user_id, role_id, granted_by],
@@ -185,8 +220,14 @@ impl UsersRepo {
         Ok(())
     }
 
-    pub fn revoke_role(conn: &Connection, school_id: &str, user_id: &str, role_id: &str) -> StorageResult<bool> {
-        let changed = exec(conn, 
+    pub fn revoke_role(
+        conn: &Connection,
+        school_id: &str,
+        user_id: &str,
+        role_id: &str,
+    ) -> StorageResult<bool> {
+        let changed = exec(
+            conn,
             "DELETE FROM user_roles WHERE school_id = ?1 AND user_id = ?2 AND role_id = ?3",
             params![school_id, user_id, role_id],
         )?;
@@ -194,13 +235,20 @@ impl UsersRepo {
     }
 
     /// Replace a role's permission set atomically (one write, not N).
-    pub fn set_role_permissions(conn: &Connection, school_id: &str, role_id: &str, permissions: &[String]) -> StorageResult<()> {
-        exec(conn, 
+    pub fn set_role_permissions(
+        conn: &Connection,
+        school_id: &str,
+        role_id: &str,
+        permissions: &[String],
+    ) -> StorageResult<()> {
+        exec(
+            conn,
             "DELETE FROM role_permissions WHERE school_id = ?1 AND role_id = ?2",
             params![school_id, role_id],
         )?;
         for permission in permissions {
-            exec(conn, 
+            exec(
+                conn,
                 "INSERT OR IGNORE INTO role_permissions (school_id, role_id, permission)
                  VALUES (?1, ?2, ?3)",
                 params![school_id, role_id, permission],
@@ -228,7 +276,11 @@ impl UsersRepo {
         Ok(rows)
     }
 
-    pub fn list_roles_for_user(conn: &Connection, school_id: &str, user_id: &str) -> StorageResult<Vec<RoleRow>> {
+    pub fn list_roles_for_user(
+        conn: &Connection,
+        school_id: &str,
+        user_id: &str,
+    ) -> StorageResult<Vec<RoleRow>> {
         let mut stmt = conn.prepare_cached(
             "SELECT r.role_id, r.school_id, r.name, r.is_builtin, r.revision
              FROM user_roles ur

@@ -6,9 +6,9 @@
 
 use crate::auth::{AuthError, SessionContext};
 use rusqlite::Connection;
+use std::sync::Arc;
 use xamverse_storage::repos::UsersRepo;
 use xamverse_storage::Database;
-use std::sync::Arc;
 
 pub struct Authz {
     db: Arc<Database>,
@@ -21,10 +21,16 @@ impl Authz {
 
     /// Live permission check against the current role tables — a permission
     /// revoked by a replicated authorization op applies on the next check.
-    pub fn can(&self, ctx: &SessionContext, permission: &str) -> xamverse_storage::StorageResult<bool> {
+    pub fn can(
+        &self,
+        ctx: &SessionContext,
+        permission: &str,
+    ) -> xamverse_storage::StorageResult<bool> {
         let conn = self.db.lock();
-        Ok(UsersRepo::effective_permissions(&conn, &ctx.school_id, &ctx.user_id)?
-            .contains(permission))
+        Ok(
+            UsersRepo::effective_permissions(&conn, &ctx.school_id, &ctx.user_id)?
+                .contains(permission),
+        )
     }
 
     /// `can` with denial auditing — use in every privileged code path.
@@ -88,7 +94,8 @@ mod tests {
 
     fn setup() -> (tempfile::TempDir, Arc<Database>) {
         let dir = tempfile::tempdir().unwrap();
-        let (db, _) = Database::open(dir.path().join("rbac.xamdb"), &DatabaseKey::generate()).unwrap();
+        let (db, _) =
+            Database::open(dir.path().join("rbac.xamdb"), &DatabaseKey::generate()).unwrap();
         let db = Arc::new(db);
         db.tx(|conn| {
             SchoolsRepo::enroll(conn, "s1", "School")?;
@@ -103,19 +110,24 @@ mod tests {
         let user_id = uuid::Uuid::now_v7().to_string();
         let hash = hash_password("pw-123456").unwrap();
         db.tx(|conn| {
-            UsersRepo::upsert(conn, &UserRow {
-                user_id: user_id.clone(),
-                school_id: "s1".into(),
-                username: user_id.clone(),
-                display_name: "t".into(),
-                status: "active".into(),
-                auth_hash: Some(hash),
-                origin_device_id: None,
-                revision: 1,
-                updated_at: now_rfc3339(),
-            })?;
+            UsersRepo::upsert(
+                conn,
+                &UserRow {
+                    user_id: user_id.clone(),
+                    school_id: "s1".into(),
+                    username: user_id.clone(),
+                    display_name: "t".into(),
+                    status: "active".into(),
+                    auth_hash: Some(hash),
+                    origin_device_id: None,
+                    revision: 1,
+                    updated_at: now_rfc3339(),
+                },
+            )?;
             for role in roles {
-                let role_row = UsersRepo::find_role_by_name(conn, "s1", role).unwrap().unwrap();
+                let role_row = UsersRepo::find_role_by_name(conn, "s1", role)
+                    .unwrap()
+                    .unwrap();
                 UsersRepo::grant_role(conn, "s1", &user_id, &role_row.role_id, None)?;
             }
             Ok(())
@@ -138,7 +150,9 @@ mod tests {
         let (_dir, db) = setup();
         let authz = Authz::new(db.clone());
         let ctx = user_with_roles(&db, &["student"]);
-        assert!(!authz.can(&ctx, crate::permissions::reserved::DEVICES_PAIR).unwrap());
+        assert!(!authz
+            .can(&ctx, crate::permissions::reserved::DEVICES_PAIR)
+            .unwrap());
         assert!(matches!(
             authz.require(&ctx, crate::permissions::reserved::BACKUPS_MANAGE, None),
             Err(AuthError::PermissionDenied { .. })
@@ -154,8 +168,12 @@ mod tests {
         for perm in crate::permissions::reserved::ALL {
             assert!(authz.can(&owner, perm).unwrap(), "owner lacks {perm}");
         }
-        assert!(!authz.can(&admin, crate::permissions::reserved::LICENCE_MANAGE).unwrap());
-        assert!(authz.can(&admin, crate::permissions::reserved::SYNC_COLLECT).unwrap());
+        assert!(!authz
+            .can(&admin, crate::permissions::reserved::LICENCE_MANAGE)
+            .unwrap());
+        assert!(authz
+            .can(&admin, crate::permissions::reserved::SYNC_COLLECT)
+            .unwrap());
     }
 
     #[test]
@@ -163,15 +181,21 @@ mod tests {
         let (_dir, db) = setup();
         let authz = Authz::new(db.clone());
         let ctx = user_with_roles(&db, &["teacher"]);
-        assert!(authz.can(&ctx, crate::permissions::reserved::SYNC_READ).unwrap());
+        assert!(authz
+            .can(&ctx, crate::permissions::reserved::SYNC_READ)
+            .unwrap());
 
         // Revoke the teacher role; next check denies with no restart.
         db.tx(|conn| {
-            let role = UsersRepo::find_role_by_name(conn, "s1", "teacher").unwrap().unwrap();
+            let role = UsersRepo::find_role_by_name(conn, "s1", "teacher")
+                .unwrap()
+                .unwrap();
             UsersRepo::revoke_role(conn, "s1", &ctx.user_id, &role.role_id)?;
             Ok(())
         })
         .unwrap();
-        assert!(!authz.can(&ctx, crate::permissions::reserved::SYNC_READ).unwrap());
+        assert!(!authz
+            .can(&ctx, crate::permissions::reserved::SYNC_READ)
+            .unwrap());
     }
 }

@@ -11,6 +11,10 @@
 //! backup-before-apply hook, and full update history. Irreversible database
 //! migrations are never auto-rolled-back — recovery is restore-from-backup.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
@@ -40,6 +44,9 @@ pub struct ReleaseManifest {
 }
 
 impl ReleaseManifest {
+    // serde over a struct of borrowed fields cannot fail at runtime; the
+    // only failure mode is OOM. Allowed explicitly, not silently.
+    #[allow(clippy::expect_used)]
     pub fn signing_message(&self) -> Vec<u8> {
         serde_json::to_vec(&UnsignedView {
             version: &self.version,
@@ -60,7 +67,9 @@ impl ReleaseManifest {
             .iter()
             .any(|pk| verify_signature(pk, &self.signing_message(), &self.signature));
         if !ok {
-            return Err(UpdateError::Invalid("signature not from a trusted release key".into()));
+            return Err(UpdateError::Invalid(
+                "signature not from a trusted release key".into(),
+            ));
         }
         Ok(())
     }
@@ -176,10 +185,7 @@ impl UpdaterService {
         let expected = format!("{}/{}", self.config.platform, self.config.arch);
         let found = format!("{}/{}", manifest.platform, manifest.arch);
         if found != expected {
-            return Err(UpdateError::PlatformMismatch {
-                found,
-                expected,
-            });
+            return Err(UpdateError::PlatformMismatch { found, expected });
         }
 
         // Downgrade refusal (semver, not string compare).
@@ -213,7 +219,9 @@ impl UpdaterService {
             });
         }
         if artifact.len() as u64 != manifest.artifact_size {
-            return Err(UpdateError::Invalid("artifact size differs from manifest".into()));
+            return Err(UpdateError::Invalid(
+                "artifact size differs from manifest".into(),
+            ));
         }
 
         // Store + record. Import is idempotent on artifact hash.
@@ -241,21 +249,20 @@ impl UpdaterService {
             )?;
             Ok(())
         })?;
-        self.events.publish(EngineEvent::new(EventKind::UpdateAvailable {
-            version: manifest.version.clone(),
-        }));
+        self.events
+            .publish(EngineEvent::new(EventKind::UpdateAvailable {
+                version: manifest.version.clone(),
+            }));
         Ok(artifact_sha)
     }
 
-    /// Stage a verified update for the desktop shell to apply (backup-first
-    /// + exam interlock). The actual binary swap belongs to the Tauri
+    /// Stage a verified update for the desktop shell to apply (backup first
+    /// and exam interlock). The actual binary swap belongs to the Tauri
     /// updater; staging writes the artifact where the shell expects it.
     pub fn stage(&self, update_id: &str) -> Result<PathBuf, UpdateError> {
         // Interlocks FIRST — refuse before touching anything.
-        (self.interlocks.pre_apply_check)()
-            .map_err(UpdateError::InterlockBlocked)?;
-        (self.interlocks.pre_apply_backup)()
-            .map_err(UpdateError::InterlockBlocked)?;
+        (self.interlocks.pre_apply_check)().map_err(UpdateError::InterlockBlocked)?;
+        (self.interlocks.pre_apply_backup)().map_err(UpdateError::InterlockBlocked)?;
 
         let artifact = {
             let conn = self.db.lock();
@@ -284,7 +291,8 @@ impl UpdaterService {
     pub fn mark_applied(&self, update_id: &str) -> StorageResult<()> {
         self.set_state(update_id, "applied", None)?;
         let version = self.version_of(update_id)?.unwrap_or_default();
-        self.events.publish(EngineEvent::new(EventKind::UpdateApplied { version }));
+        self.events
+            .publish(EngineEvent::new(EventKind::UpdateApplied { version }));
         Ok(())
     }
 
@@ -356,7 +364,10 @@ mod tests {
             platform: "linux".into(),
             arch: "x86_64".into(),
         };
-        (db.clone(), UpdaterService::new(db, Arc::new(EventBus::new()), config))
+        (
+            db.clone(),
+            UpdaterService::new(db, Arc::new(EventBus::new()), config),
+        )
     }
 
     fn manifest(key: &TestReleaseKey, artifact: &[u8], version: &str, platform: &str) -> String {

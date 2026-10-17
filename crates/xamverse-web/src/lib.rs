@@ -16,6 +16,10 @@
 //! * SSE streams filtered per session permission,
 //! * health endpoint with minimal, non-sensitive payload.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use axum::extract::State;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response, Sse};
@@ -66,8 +70,8 @@ pub struct BoundWebServer {
 }
 
 impl BoundWebServer {
-    pub fn addr(&self) -> std::net::SocketAddr {
-        self.listener.local_addr().expect("bound listener")
+    pub fn addr(&self) -> Result<std::net::SocketAddr, WebError> {
+        self.listener.local_addr().map_err(WebError::Io)
     }
 
     /// Serve until the shutdown signal fires.
@@ -84,7 +88,11 @@ impl BoundWebServer {
 
 impl WebServer {
     /// Convenience: bind + run until shutdown.
-    pub async fn serve(engine: Arc<Engine>, config: WebConfig, shutdown: tokio::sync::watch::Receiver<bool>) -> Result<(), WebError> {
+    pub async fn serve(
+        engine: Arc<Engine>,
+        config: WebConfig,
+        shutdown: tokio::sync::watch::Receiver<bool>,
+    ) -> Result<(), WebError> {
         let bound = Self::bind(engine, config)?;
         bound.run(shutdown).await
     }
@@ -97,7 +105,13 @@ impl WebServer {
         };
         let mut router = Router::new()
             .route("/healthz", get(health))
-            .route("/api/v1/auth/login", post(login))
+            // Login is unauthenticated: cap the body explicitly (DoS guard).
+            .route(
+                "/api/v1/auth/login",
+                post(login).layer(tower_http::limit::RequestBodyLimitLayer::new(
+                    MAX_LOGIN_BODY,
+                )),
+            )
             .route("/api/v1/auth/logout", post(logout))
             .route("/api/v1/me", get(me))
             .route("/api/v1/events", get(events_sse))
@@ -111,11 +125,13 @@ impl WebServer {
                 let index = index.clone();
                 async move {
                     match tokio::fs::read(&index).await {
-                        Ok(bytes) => Response::builder()
-                            .status(StatusCode::OK)
-                            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-                            .body(axum::body::Body::from(bytes))
-                            .unwrap(),
+                        // Tuple IntoResponse — no fallible builder, no unwrap.
+                        Ok(bytes) => (
+                            StatusCode::OK,
+                            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                            bytes,
+                        )
+                            .into_response(),
                         Err(_) => StatusCode::NOT_FOUND.into_response(),
                     }
                 }
@@ -194,7 +210,9 @@ async fn login(
             )
                 .into_response()
         }
-        Err(AuthError::LockedOut) => error_response(StatusCode::TOO_MANY_REQUESTS, "try again later"),
+        Err(AuthError::LockedOut) => {
+            error_response(StatusCode::TOO_MANY_REQUESTS, "try again later")
+        }
         Err(_) => error_response(StatusCode::UNAUTHORIZED, "invalid credentials"),
     }
 }
@@ -247,23 +265,15 @@ async fn sync_queue(State(state): State<WebState>, headers: HeaderMap) -> Respon
     let engine = state.engine.clone();
     with_session_permitted(&engine, &headers, "sync.read", |ctx| {
         let conn = engine.db.lock();
-        let jobs = xamverse_storage::repos::JobsRepo::list(
-            &conn,
-            &ctx.school_id.clone(),
-            &[],
-            100,
-        )
-        .unwrap_or_default();
+        let jobs = xamverse_storage::repos::JobsRepo::list(&conn, &ctx.school_id.clone(), &[], 100)
+            .unwrap_or_default();
         Json(serde_json::json!(jobs)).into_response()
     })
 }
 
 /// Server-sent events, filtered to the session's authorization context.
 /// Reconnect recovery uses the event bus history (`subscribe_since`).
-async fn events_sse(
-    State(state): State<WebState>,
-    headers: HeaderMap,
-) -> Response {
+async fn events_sse(State(state): State<WebState>, headers: HeaderMap) -> Response {
     let engine = state.engine.clone();
     let ctx = match authenticate(&engine, &headers) {
         Ok(ctx) => ctx,
@@ -271,9 +281,8 @@ async fn events_sse(
     };
     let receiver = engine.events.subscribe();
     let school_id = ctx.school_id.clone();
-    let stream = futures_util::stream::unfold(
-        (receiver, school_id),
-        |(mut rx, school_id)| async move {
+    let stream =
+        futures_util::stream::unfold((receiver, school_id), |(mut rx, school_id)| async move {
             loop {
                 match rx.recv().await {
                     Ok(event) => {
@@ -286,9 +295,11 @@ async fn events_sse(
                         }
                         let json = serde_json::to_string(&event).unwrap_or_default();
                         return Some((
-                            Ok::<_, Infallible>(axum::response::sse::Event::default()
-                                .event(event.kind.kind_name())
-                                .data(json)),
+                            Ok::<_, Infallible>(
+                                axum::response::sse::Event::default()
+                                    .event(event.kind.kind_name())
+                                    .data(json),
+                            ),
                             (rx, school_id),
                         ));
                     }
@@ -296,9 +307,10 @@ async fn events_sse(
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
                 }
             }
-        },
-    );
-    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()).into_response()
+        });
+    Sse::new(stream)
+        .keep_alive(axum::response::sse::KeepAlive::default())
+        .into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +343,10 @@ fn authenticate(
     headers: &HeaderMap,
 ) -> Result<xamverse_security::SessionContext, StatusCode> {
     let token = session_token(headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    engine.auth.authenticate(&token).map_err(|_| StatusCode::UNAUTHORIZED)
+    engine
+        .auth
+        .authenticate(&token)
+        .map_err(|_| StatusCode::UNAUTHORIZED)
 }
 
 fn with_session(
@@ -363,11 +378,7 @@ fn with_session_permitted(
 
 fn error_response(status: StatusCode, message: &str) -> Response {
     // Errors are JSON with stable shape; never leak internals.
-    (
-        status,
-        Json(serde_json::json!({ "error": message })),
-    )
-        .into_response()
+    (status, Json(serde_json::json!({ "error": message }))).into_response()
 }
 
 async fn security_headers(
@@ -376,9 +387,15 @@ async fn security_headers(
 ) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
-    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
     headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    headers.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static("default-src 'self'; connect-src 'self'"),
@@ -392,7 +409,14 @@ mod tests {
     use xamverse_core::EngineConfig;
     use xamverse_security::hash_password;
 
-    async fn spawn_server(allowed_origins: Vec<String>) -> (std::net::SocketAddr, Arc<Engine>, tokio::sync::watch::Sender<bool>, tempfile::TempDir) {
+    async fn spawn_server(
+        allowed_origins: Vec<String>,
+    ) -> (
+        std::net::SocketAddr,
+        Arc<Engine>,
+        tokio::sync::watch::Sender<bool>,
+        tempfile::TempDir,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let engine = Engine::init(EngineConfig {
             data_dir: dir.path().join("data"),
@@ -455,12 +479,17 @@ mod tests {
             frontend_dir: None,
         };
         let bound = WebServer::bind(server_engine, config).unwrap();
-        let addr = bound.addr();
+        let addr = bound.addr().unwrap();
         tokio::spawn(async move { bound.run(shutdown_rx).await.unwrap() });
         (addr, engine, shutdown_tx, dir)
     }
 
-    async fn post(client: &reqwest_stub::Client, url: &str, body: serde_json::Value, origin: Option<&str>) -> reqwest_stub::Response {
+    async fn post(
+        client: &reqwest_stub::Client,
+        url: &str,
+        body: serde_json::Value,
+        origin: Option<&str>,
+    ) -> reqwest_stub::Response {
         let mut req = client.post(url).json(&body);
         if let Some(origin) = origin {
             req = req.header("Origin", origin);
@@ -480,10 +509,20 @@ mod tests {
                 Self
             }
             pub fn post(&self, url: &str) -> RequestBuilder {
-                RequestBuilder { method: "POST", url: url.to_string(), body: None, headers: Vec::new() }
+                RequestBuilder {
+                    method: "POST",
+                    url: url.to_string(),
+                    body: None,
+                    headers: Vec::new(),
+                }
             }
             pub fn get(&self, url: &str) -> RequestBuilder {
-                RequestBuilder { method: "GET", url: url.to_string(), body: None, headers: Vec::new() }
+                RequestBuilder {
+                    method: "GET",
+                    url: url.to_string(),
+                    body: None,
+                    headers: Vec::new(),
+                }
             }
         }
 
@@ -508,7 +547,11 @@ mod tests {
                 let url = self.url.replace("http://", "");
                 let (host, rest) = url.split_once('/').unwrap();
                 let path = format!("/{}", rest);
-                let addr = if host.contains(':') { host.to_string() } else { format!("{host}:80") };
+                let addr = if host.contains(':') {
+                    host.to_string()
+                } else {
+                    format!("{host}:80")
+                };
                 let mut stream = tokio::net::TcpStream::connect(&addr).await?;
                 let body = self.body.map(|b| b.to_string()).unwrap_or_default();
                 let mut req = format!(
@@ -579,21 +622,34 @@ mod tests {
         let base = format!("http://{addr}");
 
         // Wrong credentials: generic 401.
-        let res = post(&client, &format!("{base}/api/v1/auth/login"),
-            serde_json::json!({"school_id": "s1", "username": "tina", "password": "wrong"}), None).await;
+        let res = post(
+            &client,
+            &format!("{base}/api/v1/auth/login"),
+            serde_json::json!({"school_id": "s1", "username": "tina", "password": "wrong"}),
+            None,
+        )
+        .await;
         assert_eq!(res.status(), 401);
 
         // Right credentials: session cookie.
-        let res = post(&client, &format!("{base}/api/v1/auth/login"),
-            serde_json::json!({"school_id": "s1", "username": "tina", "password": "teacher-pw-1"}), None).await;
+        let res = post(
+            &client,
+            &format!("{base}/api/v1/auth/login"),
+            serde_json::json!({"school_id": "s1", "username": "tina", "password": "teacher-pw-1"}),
+            None,
+        )
+        .await;
         assert_eq!(res.status(), 200);
         let cookie_value = res.cookie("xv_session").expect("session cookie");
         assert!(!cookie_value.is_empty());
 
         // /me with the cookie: identity + permissions visible.
-        let res = client.get(&format!("{base}/api/v1/me"))
+        let res = client
+            .get(&format!("{base}/api/v1/me"))
             .header("Cookie", &format!("xv_session={cookie_value}"))
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 200);
         let body = res.text();
         assert!(body.contains("\"sync.read\""));
@@ -613,27 +669,47 @@ mod tests {
         let base = format!("http://{addr}");
 
         // Teacher login.
-        let res = post(&client, &format!("{base}/api/v1/auth/login"),
-            serde_json::json!({"school_id": "s1", "username": "tina", "password": "teacher-pw-1"}), None).await;
+        let res = post(
+            &client,
+            &format!("{base}/api/v1/auth/login"),
+            serde_json::json!({"school_id": "s1", "username": "tina", "password": "teacher-pw-1"}),
+            None,
+        )
+        .await;
         let teacher_cookie = res.cookie("xv_session").unwrap();
 
         // Teacher lacks audit.view -> diagnostics denied (403).
-        let res = client.get(&format!("{base}/api/v1/diagnostics"))
+        let res = client
+            .get(&format!("{base}/api/v1/diagnostics"))
             .header("Cookie", &format!("xv_session={teacher_cookie}"))
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 403);
 
         // Owner passes.
-        let res = post(&client, &format!("{base}/api/v1/auth/login"),
-            serde_json::json!({"school_id": "s1", "username": "ada", "password": "owner-pw-1"}), None).await;
+        let res = post(
+            &client,
+            &format!("{base}/api/v1/auth/login"),
+            serde_json::json!({"school_id": "s1", "username": "ada", "password": "owner-pw-1"}),
+            None,
+        )
+        .await;
         let owner_cookie = res.cookie("xv_session").unwrap();
-        let res = client.get(&format!("{base}/api/v1/diagnostics"))
+        let res = client
+            .get(&format!("{base}/api/v1/diagnostics"))
             .header("Cookie", &format!("xv_session={owner_cookie}"))
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 200);
 
         // No session at all -> unauthorized.
-        let res = client.get(&format!("{base}/api/v1/diagnostics")).send().await.unwrap();
+        let res = client
+            .get(&format!("{base}/api/v1/diagnostics"))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 401);
 
         shutdown.send(true).unwrap();
@@ -645,25 +721,38 @@ mod tests {
         let client = reqwest_stub::Client::new();
         let base = format!("http://{addr}");
 
-        let res = post(&client, &format!("{base}/api/v1/auth/login"),
-            serde_json::json!({"school_id": "s1", "username": "ada", "password": "owner-pw-1"}), None).await;
+        let res = post(
+            &client,
+            &format!("{base}/api/v1/auth/login"),
+            serde_json::json!({"school_id": "s1", "username": "ada", "password": "owner-pw-1"}),
+            None,
+        )
+        .await;
         let cookie_value = res.cookie("xv_session").unwrap();
 
         // Works before revocation.
-        let res = client.get(&format!("{base}/api/v1/me"))
+        let res = client
+            .get(&format!("{base}/api/v1/me"))
             .header("Cookie", &format!("xv_session={cookie_value}"))
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 200);
 
         // Revoke via the shared session store (browser session governance).
         let token_hash = xamverse_security::hash_token(&cookie_value);
-        let conn = engine.db.lock();
-        xamverse_storage::repos::SessionsRepo::revoke(&conn, &token_hash, "test revoke").unwrap();
-        drop(conn);
+        {
+            let conn = engine.db.lock();
+            xamverse_storage::repos::SessionsRepo::revoke(&conn, &token_hash, "test revoke")
+                .unwrap();
+        } // guard dropped before any await point
 
-        let res = client.get(&format!("{base}/api/v1/me"))
+        let res = client
+            .get(&format!("{base}/api/v1/me"))
             .header("Cookie", &format!("xv_session={cookie_value}"))
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         assert_eq!(res.status(), 401);
 
         shutdown.send(true).unwrap();
@@ -676,14 +765,22 @@ mod tests {
         let client = reqwest_stub::Client::new();
         let base = format!("http://{addr}");
 
-        let res = post(&client, &format!("{base}/api/v1/auth/login"),
+        let res = post(
+            &client,
+            &format!("{base}/api/v1/auth/login"),
             serde_json::json!({"school_id": "s1", "username": "ada", "password": "owner-pw-1"}),
-            Some("http://evil.example")).await;
+            Some("http://evil.example"),
+        )
+        .await;
         assert_eq!(res.status(), 403);
 
-        let res = post(&client, &format!("{base}/api/v1/auth/login"),
+        let res = post(
+            &client,
+            &format!("{base}/api/v1/auth/login"),
             serde_json::json!({"school_id": "s1", "username": "ada", "password": "owner-pw-1"}),
-            Some("http://good.example")).await;
+            Some("http://good.example"),
+        )
+        .await;
         assert_eq!(res.status(), 200);
 
         shutdown.send(true).unwrap();

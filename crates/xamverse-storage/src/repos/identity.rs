@@ -4,6 +4,7 @@ use super::exec;
 use crate::error::{StorageError, StorageResult};
 use crate::now_rfc3339;
 use rusqlite::{params, Connection};
+use std::str::FromStr;
 
 /// A device known locally — either this installation (`is_local = 1`) or a
 /// remote peer that has been seen, paired or is awaiting pairing.
@@ -39,8 +40,14 @@ impl TrustState {
             TrustState::Blocked => "blocked",
         }
     }
+}
 
-    pub fn from_str(raw: &str) -> StorageResult<Self> {
+/// String parsing lives in the FromStr trait (clippy::should_implement_trait)
+/// so callers can rely on the standard idiom.
+impl std::str::FromStr for TrustState {
+    type Err = StorageError;
+
+    fn from_str(raw: &str) -> StorageResult<Self> {
         match raw {
             "pending" => Ok(TrustState::Pending),
             "trusted" => Ok(TrustState::Trusted),
@@ -70,7 +77,8 @@ impl DevicesRepo {
     /// Insert or update a device record. The fingerprint is immutable — a
     /// device whose fingerprint changed is treated as a new identity.
     pub fn upsert(conn: &Connection, device: &DeviceRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO devices (device_id, school_id, name, platform, signing_pk,
                                   transport_pk, fingerprint, is_local, last_seen_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
@@ -154,7 +162,8 @@ impl DevicesRepo {
 
     /// Record that a device was seen on the network (diagnostics only).
     pub fn touch_last_seen(conn: &Connection, device_id: &str) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "UPDATE devices SET last_seen_at = ?2 WHERE device_id = ?1",
             params![device_id, now_rfc3339()],
         )?;
@@ -187,8 +196,13 @@ impl TrustRepo {
         approved_by: Option<&str>,
         note: Option<&str>,
     ) -> StorageResult<()> {
-        let paired_at = if state == TrustState::Trusted { Some(now_rfc3339()) } else { None };
-        exec(conn, 
+        let paired_at = if state == TrustState::Trusted {
+            Some(now_rfc3339())
+        } else {
+            None
+        };
+        exec(
+            conn,
             "INSERT INTO device_trust (school_id, device_id, state, paired_at, approved_by, note)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(school_id, device_id) DO UPDATE SET
@@ -196,12 +210,23 @@ impl TrustRepo {
                 paired_at = COALESCE(excluded.paired_at, device_trust.paired_at),
                 approved_by = COALESCE(excluded.approved_by, device_trust.approved_by),
                 note = excluded.note",
-            params![school_id, device_id, state.as_str(), paired_at, approved_by, note],
+            params![
+                school_id,
+                device_id,
+                state.as_str(),
+                paired_at,
+                approved_by,
+                note
+            ],
         )?;
         Ok(())
     }
 
-    pub fn get(conn: &Connection, school_id: &str, device_id: &str) -> StorageResult<Option<TrustRow>> {
+    pub fn get(
+        conn: &Connection,
+        school_id: &str,
+        device_id: &str,
+    ) -> StorageResult<Option<TrustRow>> {
         let mut stmt = conn.prepare_cached(
             "SELECT school_id, device_id, state, paired_at, approved_by, note
              FROM device_trust WHERE school_id = ?1 AND device_id = ?2",

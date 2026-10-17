@@ -17,7 +17,7 @@
 
 use crate::messages::*;
 use std::sync::Arc;
-use xamverse_events::{EngineEvent, EventBus, EventKind};
+use xamverse_events::{EngineEvent, EventKind};
 use xamverse_identity::DeviceCard;
 use xamverse_network::{AuthenticatedPeer, Envelope, HandlerFuture, PeerHandler, TrustDecision};
 use xamverse_storage::repos::{
@@ -28,8 +28,25 @@ use xamverse_storage::{checksum, now_rfc3339, Database, StorageError};
 use super::engine::SyncEngine;
 use super::runner::{op_row_to_wire, OpsReply};
 
+/// Serialize a success reply. serde over these static-shaped structs cannot
+/// fail at runtime (no maps with non-string keys, no custom serializers);
+/// the only failure mode is OOM. Keeping the single `expect` here — instead
+/// of one per handler arm — means the allowance is documented exactly once.
+#[allow(clippy::expect_used)]
+fn reply<T: serde::Serialize>(kind: &str, payload: &T) -> Option<Envelope> {
+    Some(Envelope::new(
+        kind,
+        serde_json::to_value(payload).expect("reply payload is always serializable"),
+    ))
+}
+
 impl PeerHandler for SyncEngine {
-    fn handle(&self, peer: &AuthenticatedPeer, trusted: TrustDecision, msg: Envelope) -> HandlerFuture {
+    fn handle(
+        &self,
+        peer: &AuthenticatedPeer,
+        trusted: TrustDecision,
+        msg: Envelope,
+    ) -> HandlerFuture {
         // Clone the Arcs this message may need; the future must own them.
         let db = self.db.clone();
         let events = self.events.clone();
@@ -41,14 +58,13 @@ impl PeerHandler for SyncEngine {
         match msg.kind.as_str() {
             "ping" => match serde_json::from_value::<Ping>(msg.payload.clone()) {
                 Ok(p) => Box::pin(async move {
-                    Some(Envelope::new(
+                    reply(
                         "pong",
-                        serde_json::to_value(Pong {
+                        &Pong {
                             sent_at: p.sent_at,
                             responded_at: now_rfc3339(),
-                        })
-                        .expect("pong serializable"),
-                    ))
+                        },
+                    )
                 }),
                 Err(e) => error_reply(&msg, &e.to_string()),
             },
@@ -99,18 +115,17 @@ impl PeerHandler for SyncEngine {
                                 // pairing approval itself is user-driven.
                                 .with_device("pending"),
                             );
-                            Some(Envelope::new(
+                            // The responder is THIS engine; a requester
+                            // approving the wrong device id is caught by
+                            // the integration suite.
+                            reply(
                                 "pair_pending",
-                                // The responder is THIS engine (reporting the
-                                // requester's id approved the wrong device —
-                                // caught by the integration suite).
-                                serde_json::to_value(PairPending {
+                                &PairPending {
                                     responder_device_id: identity_device_id,
                                     responder_name: identity_name,
                                     responder_fingerprint: identity_fingerprint,
-                                })
-                                .expect("pair_pending serializable"),
-                            ))
+                                },
+                            )
                         }
                         Err(err) => Some(msg.error_reply("request_failed", &err.to_string())),
                     }
@@ -123,16 +138,13 @@ impl PeerHandler for SyncEngine {
                 match serde_json::from_value::<BlobChunk>(msg.payload.clone()) {
                     Ok(chunk) => Box::pin(async move {
                         match receive_blob_chunk(&db, &chunk).await {
-                            Ok(stored) => Some(
-                                Envelope::new(
-                                    "blob_status",
-                                    serde_json::to_value(BlobStatusReply {
-                                        sha256: chunk.sha256,
-                                        stored_bytes: stored,
-                                        total_size: chunk.total_size,
-                                    })
-                                    .expect("status serializable"),
-                                ),
+                            Ok(stored) => reply(
+                                "blob_status",
+                                &BlobStatusReply {
+                                    sha256: chunk.sha256,
+                                    stored_bytes: stored,
+                                    total_size: chunk.total_size,
+                                },
                             ),
                             Err(err) => Some(msg.error_reply("request_failed", &err.to_string())),
                         }
@@ -148,43 +160,42 @@ impl PeerHandler for SyncEngine {
                         BlobRepo::size(&conn, &status.sha256).unwrap_or(None)
                     }
                     .unwrap_or(0);
-                    Some(Envelope::new(
+                    reply(
                         "blob_status",
-                        serde_json::to_value(BlobStatusReply {
+                        &BlobStatusReply {
                             sha256: status.sha256,
                             stored_bytes: stored,
                             // Receiver-side total is unknown until first chunk.
                             total_size: 0,
-                        })
-                        .expect("status serializable"),
-                    ))
+                        },
+                    )
                 }),
                 Err(e) => error_reply(&msg, &e.to_string()),
             },
 
-            _ if trusted != TrustDecision::Allow => error_reply(
-                &msg,
-                "device is not fully trusted; complete pairing first",
-            ),
+            _ if trusted != TrustDecision::Allow => {
+                error_reply(&msg, "device is not fully trusted; complete pairing first")
+            }
 
-            "manifest_request" => match serde_json::from_value::<ManifestRequest>(msg.payload.clone()) {
-                Ok(request) => Box::pin(async move {
-                    match build_manifest(&db, &request) {
-                        Ok(manifest) => Some(
-                            Envelope::new("manifest", serde_json::to_value(&manifest).expect("manifest serializable")),
-                        ),
-                        Err(detail) => Some(msg.error_reply("request_failed", &detail)),
-                    }
-                }),
-                Err(e) => error_reply(&msg, &e.to_string()),
-            },
+            "manifest_request" => {
+                match serde_json::from_value::<ManifestRequest>(msg.payload.clone()) {
+                    Ok(request) => Box::pin(async move {
+                        match build_manifest(&db, &request) {
+                            Ok(manifest) => reply("manifest", &manifest),
+                            Err(detail) => Some(msg.error_reply("request_failed", &detail)),
+                        }
+                    }),
+                    Err(e) => error_reply(&msg, &e.to_string()),
+                }
+            }
 
             "ops_get" => match serde_json::from_value::<OpsGet>(msg.payload.clone()) {
                 Ok(request) => Box::pin(async move {
                     let result = (|| -> Result<OpsReply, String> {
                         let conn = db.lock();
                         // Tenant gate: only ops of the requested school leave.
-                        let rows = OpsRepo::get_many(&conn, &request.op_ids).map_err(|e| e.to_string())?;
+                        let rows =
+                            OpsRepo::get_many(&conn, &request.op_ids).map_err(|e| e.to_string())?;
                         let ops = rows
                             .into_iter()
                             .filter(|row| row.school_id == request.school_id)
@@ -196,7 +207,7 @@ impl PeerHandler for SyncEngine {
                         })
                     })();
                     match result {
-                        Ok(reply) => Some(Envelope::new("ops", serde_json::to_value(&reply).expect("ops serializable"))),
+                        Ok(ops_reply) => reply("ops", &ops_reply),
                         Err(detail) => Some(msg.error_reply("request_failed", &detail)),
                     }
                 }),
@@ -205,7 +216,7 @@ impl PeerHandler for SyncEngine {
 
             "ops_push" => match serde_json::from_value::<OpsPush>(msg.payload.clone()) {
                 Ok(push) => {
-                    let local_device = self.identity.device_id.clone();
+                    let _local_device = self.identity.device_id.clone();
                     let apply = self.apply.clone();
                     Box::pin(async move {
                         let sender_id = peer.card.device_id.clone();
@@ -232,10 +243,7 @@ impl PeerHandler for SyncEngine {
                             ready_ops.push(op.clone());
                         }
                         if ready_ops.is_empty() {
-                            return Some(Envelope::new(
-                                "ops_ack",
-                                serde_json::to_value(OpsAck { receipts }).expect("ack serializable"),
-                            ));
+                            return reply("ops_ack", &OpsAck { receipts });
                         }
                         let sender = crate::apply::SenderContext {
                             device_id: &sender_id,
@@ -244,10 +252,7 @@ impl PeerHandler for SyncEngine {
                         match apply.apply_batch(&push.school_id, &sender, &ready_ops) {
                             Ok(mut applied) => {
                                 receipts.append(&mut applied);
-                                Some(Envelope::new(
-                                    "ops_ack",
-                                    serde_json::to_value(OpsAck { receipts }).expect("ack serializable"),
-                                ))
+                                reply("ops_ack", &OpsAck { receipts })
                             }
                             Err(err) => Some(msg.error_reply("request_failed", &err.to_string())),
                         }
@@ -260,7 +265,8 @@ impl PeerHandler for SyncEngine {
                 // Unknown kinds are answered with a structured error — never
                 // a silent no-op (spec §12).
                 let _ = other;
-                let reply = msg.error_reply("unknown_kind", "this node does not implement that message");
+                let reply =
+                    msg.error_reply("unknown_kind", "this node does not implement that message");
                 Box::pin(async move { Some(reply) })
             }
         }
@@ -326,10 +332,7 @@ fn build_manifest(db: &Arc<Database>, request: &ManifestRequest) -> Result<Manif
 /// told about. Sequential-append protocol: offset must equal stored length.
 /// On completion the assembled content is hash-verified; a mismatch deletes
 /// the partial blob (the sender's next status poll restarts from zero).
-async fn receive_blob_chunk(
-    db: &Arc<Database>,
-    chunk: &BlobChunk,
-) -> Result<i64, StorageError> {
+async fn receive_blob_chunk(db: &Arc<Database>, chunk: &BlobChunk) -> Result<i64, StorageError> {
     let stored = db.tx(|conn| {
         let existing_len = BlobRepo::size(conn, &chunk.sha256)?.unwrap_or(0);
         if chunk.offset != existing_len {
@@ -354,7 +357,9 @@ async fn receive_blob_chunk(
         }
         let new_len = BlobRepo::size(conn, &chunk.sha256)?.unwrap_or(0);
         if new_len > chunk.total_size {
-            return Err(StorageError::Constraint("stored size exceeded total".into()));
+            return Err(StorageError::Constraint(
+                "stored size exceeded total".into(),
+            ));
         }
         Ok(new_len)
     })?;
@@ -373,9 +378,13 @@ async fn receive_blob_chunk(
                 let conn = db.lock();
                 conn.execute("DELETE FROM blobs WHERE sha256 = ?1", [&chunk.sha256])?;
                 tracing::warn!(sha = %chunk.sha256, len = data.len(), "blob hash mismatch; partial content discarded");
-                Err(StorageError::Constraint("blob hash mismatch; transfer reset".into()))
+                Err(StorageError::Constraint(
+                    "blob hash mismatch; transfer reset".into(),
+                ))
             }
-            None => Err(StorageError::Constraint("blob vanished mid-transfer".into())),
+            None => Err(StorageError::Constraint(
+                "blob vanished mid-transfer".into(),
+            )),
         }
     } else {
         Ok(stored)

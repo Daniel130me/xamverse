@@ -24,7 +24,8 @@ pub struct BackupsRepo;
 
 impl BackupsRepo {
     pub fn insert(conn: &Connection, backup: &BackupRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT INTO backups (backup_id, kind, school_scope, path, size_bytes, sha256,
                                   schema_version, device_id, verified, created_at, retention_until)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -46,10 +47,8 @@ impl BackupsRepo {
     }
 
     pub fn list(conn: &Connection) -> StorageResult<Vec<BackupRow>> {
-        let mut stmt = conn.prepare_cached(&format!(
-            "{} ORDER BY created_at DESC",
-            Self::SELECT
-        ))?;
+        let mut stmt =
+            conn.prepare_cached(&format!("{} ORDER BY created_at DESC", Self::SELECT))?;
         let rows = stmt
             .query_map([], Self::map_row)?
             .collect::<Result<Vec<_>, _>>()?;
@@ -69,7 +68,8 @@ impl BackupsRepo {
     }
 
     pub fn mark_verified(conn: &Connection, backup_id: &str) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "UPDATE backups SET verified = 1 WHERE backup_id = ?1",
             [backup_id],
         )?;
@@ -78,7 +78,8 @@ impl BackupsRepo {
 
     /// Retention enforcement: delete the oldest rows beyond `keep`.
     pub fn prune_beyond(conn: &Connection, keep: i64) -> StorageResult<u64> {
-        let changed = exec(conn, 
+        let changed = exec(
+            conn,
             "DELETE FROM backups WHERE backup_id NOT IN (
                 SELECT backup_id FROM backups ORDER BY created_at DESC LIMIT ?1
              )",
@@ -124,7 +125,8 @@ pub struct UpdateHistoryRepo;
 
 impl UpdateHistoryRepo {
     pub fn insert(conn: &Connection, row: &UpdateStateRow) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "INSERT OR REPLACE INTO update_history
                 (update_id, version, platform, arch, state, manifest_json, note, at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -142,8 +144,14 @@ impl UpdateHistoryRepo {
         Ok(())
     }
 
-    pub fn set_state(conn: &Connection, update_id: &str, state: &str, note: Option<&str>) -> StorageResult<()> {
-        let changed = exec(conn, 
+    pub fn set_state(
+        conn: &Connection,
+        update_id: &str,
+        state: &str,
+        note: Option<&str>,
+    ) -> StorageResult<()> {
+        let changed = exec(
+            conn,
             "UPDATE update_history SET state = ?2, note = ?3, at = ?4 WHERE update_id = ?1",
             params![update_id, state, note, now_rfc3339()],
         )?;
@@ -169,10 +177,8 @@ impl UpdateHistoryRepo {
     }
 
     pub fn latest(conn: &Connection) -> StorageResult<Option<UpdateStateRow>> {
-        let mut stmt = conn.prepare_cached(&format!(
-            "{} ORDER BY at DESC LIMIT 1",
-            Self::SELECT
-        ))?;
+        let mut stmt =
+            conn.prepare_cached(&format!("{} ORDER BY at DESC LIMIT 1", Self::SELECT))?;
         let mut rows = stmt.query([])?;
         match rows.next()? {
             Some(row) => Ok(Some(Self::map_row(row)?)),
@@ -213,9 +219,14 @@ pub struct BackgroundJobRow {
 pub struct BackgroundJobsRepo;
 
 impl BackgroundJobsRepo {
-    pub fn enqueue(conn: &Connection, job_id: &str, kind: &str, payload_json: &str) -> StorageResult<()> {
+    pub fn enqueue(
+        conn: &Connection,
+        job_id: &str,
+        kind: &str,
+        payload_json: &str,
+    ) -> StorageResult<()> {
         let now = now_rfc3339();
-        exec(conn, 
+        exec(conn,
             "INSERT INTO background_jobs (job_id, kind, payload_json, status, created_at, updated_at)
              VALUES (?1, ?2, ?3, 'queued', ?4, ?4)",
             params![job_id, kind, payload_json, now],
@@ -247,7 +258,8 @@ impl BackgroundJobsRepo {
     }
 
     pub fn complete(conn: &Connection, job_id: &str) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "UPDATE background_jobs SET status = 'completed', updated_at = ?2 WHERE job_id = ?1",
             params![job_id, now_rfc3339()],
         )?;
@@ -255,7 +267,8 @@ impl BackgroundJobsRepo {
     }
 
     pub fn fail(conn: &Connection, job_id: &str, error: &str) -> StorageResult<()> {
-        exec(conn, 
+        exec(
+            conn,
             "UPDATE background_jobs
              SET status = 'failed', attempts = attempts + 1, last_error = ?2, updated_at = ?3
              WHERE job_id = ?1",

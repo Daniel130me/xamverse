@@ -33,6 +33,10 @@ pub struct SyncOpWire {
 
 impl SyncOpWire {
     /// Canonical bytes covered by the author's signature.
+    // serde over a struct of borrowed Strings cannot fail at runtime; the
+    // only failure mode is OOM. Allowed explicitly, not silently. (Same
+    // rationale as LicenceCertificate::signing_message.)
+    #[allow(clippy::expect_used)]
     pub fn signing_message(&self) -> Vec<u8> {
         serde_json::to_vec(&OpSigningView {
             op_id: &self.op_id,
@@ -54,7 +58,11 @@ impl SyncOpWire {
 
     /// Verify the signature against a known author signing key.
     pub fn verify_signature(&self, author_signing_pk_b64: &str) -> bool {
-        verify_signature(author_signing_pk_b64, &self.signing_message(), &self.signature)
+        verify_signature(
+            author_signing_pk_b64,
+            &self.signing_message(),
+            &self.signature,
+        )
     }
 
     /// Recompute the payload hash — detects payload/signature mismatch.
@@ -68,13 +76,18 @@ impl SyncOpWire {
                 Some(payload) => {
                     let mut hasher = Sha256::new();
                     hasher.update(payload.as_bytes());
-                    let hex: String =
-                        hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+                    let hex: String = hasher
+                        .finalize()
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect();
                     constant_eq(hex.as_bytes(), self.payload_sha256.as_bytes())
                 }
                 None => false,
             },
-            (None, Some(blob_ref)) => constant_eq(blob_ref.as_bytes(), self.payload_sha256.as_bytes()),
+            (None, Some(blob_ref)) => {
+                constant_eq(blob_ref.as_bytes(), self.payload_sha256.as_bytes())
+            }
             (None, None) => false,
         }
     }
@@ -156,7 +169,11 @@ mod tests {
         // Recompute correctly:
         let mut hasher = Sha256::new();
         hasher.update(op.payload_json.as_ref().unwrap().as_bytes());
-        op.payload_sha256 = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        op.payload_sha256 = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         assert!(op.verify_payload_hash(op.payload_json.as_deref()));
     }
 

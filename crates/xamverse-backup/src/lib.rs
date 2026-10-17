@@ -16,6 +16,10 @@
 //! `XVBK | u32 format_version | u24 nonce | header_len u32 | AEAD(header || db_bytes)`
 //! The header JSON is inside the AEAD so metadata is authenticated too.
 
+// Tests read far better with unwrap/expect; the lint stays enforced
+// for library code — this exemption is scoped to cfg(test) only.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use std::path::{Path, PathBuf};
@@ -44,6 +48,8 @@ pub enum BackupError {
     FormatTooNew { found: u32, supported: u32 },
     #[error("backup is corrupted or the passphrase is wrong (AEAD authentication failed)")]
     AuthenticationFailed,
+    #[error("backup file is truncated or corrupted")]
+    Corrupted,
     #[error("backup content hash mismatch: stored {stored}, computed {computed}")]
     ContentHashMismatch { stored: String, computed: String },
     #[error("restored database failed integrity check: {0}")]
@@ -59,7 +65,7 @@ pub enum BackupError {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct ArchiveHeader {
+pub struct ArchiveHeader {
     created_at: String,
     device_id: String,
     schema_version: i64,
@@ -77,7 +83,12 @@ pub struct BackupService {
 }
 
 impl BackupService {
-    pub fn new(db: Arc<Database>, device_id: String, events: Arc<EventBus>, backup_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        db: Arc<Database>,
+        device_id: String,
+        events: Arc<EventBus>,
+        backup_dir: impl Into<PathBuf>,
+    ) -> Self {
         Self {
             db,
             device_id,
@@ -96,7 +107,12 @@ impl BackupService {
         self.create(passphrase, "scoped", Some(school_id.to_string()))
     }
 
-    fn create(&self, passphrase: &str, kind: &str, school_scope: Option<String>) -> Result<String, BackupError> {
+    fn create(
+        &self,
+        passphrase: &str,
+        kind: &str,
+        school_scope: Option<String>,
+    ) -> Result<String, BackupError> {
         // Durability: force the WAL into the main database file before
         // copying it. Without this, recent commits can live only in
         // `*.xamdb-wal` and the backup would silently miss them (caught by
@@ -104,17 +120,20 @@ impl BackupService {
         {
             let conn = self.db.lock();
             let _: (i64, i64, i64) = conn
-                .query_row(
-                    "PRAGMA wal_checkpoint(TRUNCATE)",
-                    [],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                )
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })
                 .map_err(StorageError::from)?;
         }
         let db_bytes = std::fs::read(self.db.path())?;
         let schema_version = {
             let conn = self.db.lock();
-            conn.query_row("SELECT COALESCE(MAX(version), 0) FROM _schema_migrations", [], |r| r.get(0)).map_err(StorageError::from)?
+            conn.query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM _schema_migrations",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(StorageError::from)?
         };
         let db_sha = sha256_hex(&db_bytes);
         let header = ArchiveHeader {
@@ -160,18 +179,20 @@ impl BackupService {
             )?;
             xamverse_audit::record(
                 &conn,
-                &xamverse_audit::AuditEvent::new("backup.created")
-                    .with_target(&backup_id),
+                &xamverse_audit::AuditEvent::new("backup.created").with_target(&backup_id),
             )?;
         }
-        self.events.publish(EngineEvent::new(EventKind::BackupCompleted {
-            backup_id,
-        }));
+        self.events
+            .publish(EngineEvent::new(EventKind::BackupCompleted { backup_id }));
         Ok(path.display().to_string())
     }
 
     /// Verify an archive without restoring: AEAD + inner hash + schema gate.
-    pub fn verify(&self, archive_path: &Path, passphrase: &str) -> Result<ArchiveHeader, BackupError> {
+    pub fn verify(
+        &self,
+        archive_path: &Path,
+        passphrase: &str,
+    ) -> Result<ArchiveHeader, BackupError> {
         let archive = std::fs::read(archive_path)?;
         let plaintext = open(passphrase, &archive)?;
         let header = parse_header(&plaintext)?;
@@ -212,7 +233,7 @@ impl BackupService {
         passphrase: &str,
         target_dir: &Path,
     ) -> Result<PathBuf, BackupError> {
-        let header = self.verify(archive_path, passphrase)?;
+        let _header = self.verify(archive_path, passphrase)?;
         let plaintext = open(passphrase, &std::fs::read(archive_path)?)?;
         let db_bytes = &plaintext[header_index(&plaintext)..];
 
@@ -241,12 +262,14 @@ impl BackupService {
     ) -> Result<PathBuf, BackupError> {
         let restored = self.restore(archive_path, passphrase, target_dir)?;
         let key = xamverse_storage::DatabaseKey::from_hex(database_key_hex)
-            .map_err(|e| BackupError::Storage(e))?;
+            .map_err(BackupError::Storage)?;
         let (restored_db, _) = Database::open(&restored, &key).map_err(|e| match e {
             StorageError::DatabaseUnreadable => BackupError::AuthenticationFailed,
             other => BackupError::Storage(other),
         })?;
-        let check = restored_db.integrity_check().map_err(BackupError::Storage)?;
+        let check = restored_db
+            .integrity_check()
+            .map_err(BackupError::Storage)?;
         if check != "ok" {
             return Err(BackupError::IntegrityCheckFailed(check));
         }
@@ -267,6 +290,9 @@ impl BackupService {
 
 // -- archive primitives ------------------------------------------------------
 
+// KDF parameters are compile-time constants and Argon2id with raw output
+// cannot fail for valid params — failure would be a code bug, not input.
+#[allow(clippy::expect_used)]
 fn derive_key(passphrase: &str, salt: &[u8]) -> [u8; 32] {
     // Argon2 via the hash API with raw output: use argon2's kdf directly.
     let params = argon2::Params::new(KDF_M_COST_KIB, KDF_T_COST, KDF_P_COST, Some(32))
@@ -311,7 +337,12 @@ fn open(passphrase: &str, archive: &[u8]) -> Result<Vec<u8>, BackupError> {
     if archive.len() < 4 + 4 + KDF_SALT_LEN + NONCE_LEN + 4 || &archive[..4] != MAGIC {
         return Err(BackupError::BadMagic);
     }
-    let version = u32::from_be_bytes(archive[4..8].try_into().unwrap());
+    let version = u32::from_be_bytes(
+        archive
+            .get(4..8)
+            .and_then(|b| b.try_into().ok())
+            .ok_or(BackupError::Corrupted)?,
+    );
     if version > FORMAT_VERSION {
         return Err(BackupError::FormatTooNew {
             found: version,
@@ -323,7 +354,12 @@ fn open(passphrase: &str, archive: &[u8]) -> Result<Vec<u8>, BackupError> {
     cursor += KDF_SALT_LEN;
     let nonce = &archive[cursor..cursor + NONCE_LEN];
     cursor += NONCE_LEN;
-    let ciphertext_len = u32::from_be_bytes(archive[cursor..cursor + 4].try_into().unwrap()) as usize;
+    let ciphertext_len = u32::from_be_bytes(
+        archive
+            .get(cursor..cursor + 4)
+            .and_then(|b| b.try_into().ok())
+            .ok_or(BackupError::Corrupted)?,
+    ) as usize;
     cursor += 4;
     if archive.len() < cursor + ciphertext_len {
         return Err(BackupError::AuthenticationFailed);
@@ -365,18 +401,18 @@ fn sha256_hex(data: &[u8]) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use xamverse_storage::repos::SchoolsRepo;
-use xamverse_storage::DatabaseKey;
+    use xamverse_storage::DatabaseKey;
 
     fn setup() -> (tempfile::TempDir, Arc<Database>, BackupService) {
         let dir = tempfile::tempdir().unwrap();
         let (db, _) = Database::open(dir.path().join("b.xamdb"), &DatabaseKey::generate()).unwrap();
         let db = Arc::new(db);
-        db.tx(|conn| SchoolsRepo::enroll(conn, "s1", "School")).unwrap();
+        db.tx(|conn| SchoolsRepo::enroll(conn, "s1", "School"))
+            .unwrap();
         let service = BackupService::new(
             db.clone(),
             "dev-1".into(),
@@ -390,7 +426,9 @@ use xamverse_storage::DatabaseKey;
     fn create_verify_roundtrip() {
         let (_dir, _db, service) = setup();
         let path = service.create_full("correct horse battery").unwrap();
-        let header = service.verify(Path::new(&path), "correct horse battery").unwrap();
+        let header = service
+            .verify(Path::new(&path), "correct horse battery")
+            .unwrap();
         assert_eq!(header.kind, "full");
         assert_eq!(header.device_id, "dev-1");
     }
@@ -417,12 +455,10 @@ use xamverse_storage::DatabaseKey;
 
     #[test]
     fn restore_with_key_verifies_integrity() {
-        let (dir, db, service) = setup();
+        let (dir, db, _service) = setup();
         // Put real data in before backing up.
-        db.tx(|conn| {
-            xamverse_storage::repos::KvRepo::set(conn, "restore-marker", "present")
-        })
-        .unwrap();
+        db.tx(|conn| xamverse_storage::repos::KvRepo::set(conn, "restore-marker", "present"))
+            .unwrap();
 
         // Recover the database key from the keystore-equivalent: the test
         // must supply it explicitly (recovery key procedure).
@@ -431,7 +467,8 @@ use xamverse_storage::DatabaseKey;
         let key_hex = "ab".repeat(32);
         let known_key = DatabaseKey::from_hex(&key_hex).unwrap();
         let (db2, _) = Database::open(dir.path().join("known.xamdb"), &known_key).unwrap();
-        db2.tx(|conn| SchoolsRepo::enroll(conn, "s1", "School")).unwrap();
+        db2.tx(|conn| SchoolsRepo::enroll(conn, "s1", "School"))
+            .unwrap();
         let db2 = Arc::new(db2);
         let service2 = BackupService::new(
             db2.clone(),

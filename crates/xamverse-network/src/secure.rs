@@ -67,12 +67,24 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> SecureChannel<S> {
     /// Run the Noise XX handshake as the given role. Returns the channel plus
     /// the *remote static key* (base64) — needed to bind the device card to
     /// the actual handshake key.
-    pub async fn handshake(mut stream: S, role: HandshakeRole, transport_secret: [u8; 32]) -> Result<(Self, String), ChannelError> {
+    pub async fn handshake(
+        mut stream: S,
+        role: HandshakeRole,
+        transport_secret: [u8; 32],
+    ) -> Result<(Self, String), ChannelError> {
+        // Parsing a fixed protocol-name constant; the value is validated by
+        // every handshake test, so failure would be a compile-time bug.
+        // Allowed explicitly instead of inventing an unreachable error path.
+        #[allow(clippy::expect_used)]
         let params: snow::params::NoiseParams = NOISE_PARAMS.parse().expect("static params");
         let builder: Builder<'_> = Builder::new(params);
         let mut hs: HandshakeState = match role {
-            HandshakeRole::Initiator => builder.local_private_key(&transport_secret).build_initiator()?,
-            HandshakeRole::Responder => builder.local_private_key(&transport_secret).build_responder()?,
+            HandshakeRole::Initiator => builder
+                .local_private_key(&transport_secret)
+                .build_initiator()?,
+            HandshakeRole::Responder => builder
+                .local_private_key(&transport_secret)
+                .build_responder()?,
         };
 
         // XX: exactly three handshake rounds; the initiator writes on rounds
@@ -94,9 +106,23 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> SecureChannel<S> {
         }
 
         let binding = hex(hs.get_handshake_hash());
-        let remote_static_b64 = data_encoding::BASE64.encode(hs.get_remote_static().expect("XX authenticates both statics"));
+        // In a completed XX handshake both statics are always exchanged;
+        // a None here means the state machine left transport mode early.
+        let remote_static =
+            hs.get_remote_static()
+                .ok_or(ChannelError::Handshake(snow::Error::State(
+                    snow::error::StateProblem::MissingKeyMaterial,
+                )))?;
+        let remote_static_b64 = data_encoding::BASE64.encode(remote_static);
         let transport = hs.into_transport_mode()?;
-        Ok((Self { stream, transport, binding }, remote_static_b64))
+        Ok((
+            Self {
+                stream,
+                transport,
+                binding,
+            },
+            remote_static_b64,
+        ))
     }
 
     pub fn channel_binding(&self) -> &str {
@@ -133,7 +159,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> SecureChannel<S> {
             .is_compatible_with(&ProtocolVersion::CURRENT)
         {
             return Err(ChannelError::ProtocolMismatch {
-                remote: format!("{}.{}", their_card.protocol_version.major, their_card.protocol_version.minor),
+                remote: format!(
+                    "{}.{}",
+                    their_card.protocol_version.major, their_card.protocol_version.minor
+                ),
                 local: format!("{}", ProtocolVersion::CURRENT.major),
             });
         }
@@ -147,7 +176,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> SecureChannel<S> {
     pub async fn send_msg<T: Serialize>(&mut self, msg: &T) -> Result<(), ChannelError> {
         let payload = serde_json::to_vec(msg)?;
         if payload.len() > crate::framing::MAX_APP_PAYLOAD {
-            return Err(ChannelError::Frame(crate::framing::FrameError::PayloadTooLarge));
+            return Err(ChannelError::Frame(
+                crate::framing::FrameError::PayloadTooLarge,
+            ));
         }
         let mut ciphertext = vec![0u8; payload.len() + 16];
         let len = self.transport.write_message(&payload, &mut ciphertext)?;
@@ -193,7 +224,8 @@ mod tests {
     async fn tcp_pair() -> (tokio::net::TcpStream, tokio::net::TcpStream) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let client = tokio::spawn(async move { tokio::net::TcpStream::connect(addr).await.unwrap() });
+        let client =
+            tokio::spawn(async move { tokio::net::TcpStream::connect(addr).await.unwrap() });
         let (server, _) = listener.accept().await.unwrap();
         (client.await.unwrap(), server)
     }
@@ -213,12 +245,14 @@ mod tests {
         let ib = b.transport.secret_bytes();
         let (client_res, server_res) = tokio::join!(
             async {
-                let (mut ch, remote_static) = SecureChannel::handshake(client, HandshakeRole::Initiator, ia).await?;
+                let (mut ch, remote_static) =
+                    SecureChannel::handshake(client, HandshakeRole::Initiator, ia).await?;
                 let peer = ch.exchange_device_cards(&a, &remote_static).await?;
                 Ok::<_, ChannelError>(peer)
             },
             async {
-                let (mut ch, remote_static) = SecureChannel::handshake(server, HandshakeRole::Responder, ib).await?;
+                let (mut ch, remote_static) =
+                    SecureChannel::handshake(server, HandshakeRole::Responder, ib).await?;
                 let peer = ch.exchange_device_cards(&b, &remote_static).await?;
                 Ok::<_, ChannelError>(peer)
             }
@@ -240,17 +274,24 @@ mod tests {
 
         let (client_res, server_res) = tokio::join!(
             async {
-                let (mut ch, rs) = SecureChannel::handshake(client, HandshakeRole::Initiator, ia).await?;
+                let (mut ch, rs) =
+                    SecureChannel::handshake(client, HandshakeRole::Initiator, ia).await?;
                 ch.exchange_device_cards(&a, &rs).await?;
-                ch.send_msg(&crate::framing::Envelope::new("ping", serde_json::json!({"n": 1}))).await?;
+                ch.send_msg(&crate::framing::Envelope::new(
+                    "ping",
+                    serde_json::json!({"n": 1}),
+                ))
+                .await?;
                 let pong: crate::framing::Envelope = ch.recv_msg().await?;
                 Ok::<_, ChannelError>(pong)
             },
             async {
-                let (mut ch, rs) = SecureChannel::handshake(server, HandshakeRole::Responder, ib).await?;
+                let (mut ch, rs) =
+                    SecureChannel::handshake(server, HandshakeRole::Responder, ib).await?;
                 ch.exchange_device_cards(&b, &rs).await?;
                 let ping: crate::framing::Envelope = ch.recv_msg().await?;
-                ch.send_msg(&crate::framing::Envelope::new("pong", ping.payload)).await?;
+                ch.send_msg(&crate::framing::Envelope::new("pong", ping.payload))
+                    .await?;
                 Ok::<_, ChannelError>(())
             }
         );
@@ -272,15 +313,26 @@ mod tests {
         // must refuse: the card's transport key does not own the handshake.
         let (init_res, resp_res) = tokio::join!(
             async {
-                let (mut ch, rs) =
-                    SecureChannel::handshake(client, HandshakeRole::Initiator, victim.transport.secret_bytes()).await?;
+                let (mut ch, rs) = SecureChannel::handshake(
+                    client,
+                    HandshakeRole::Initiator,
+                    victim.transport.secret_bytes(),
+                )
+                .await?;
                 ch.exchange_device_cards(&victim, &rs).await
             },
             async {
-                let (mut ch, _) =
-                    SecureChannel::handshake(server, HandshakeRole::Responder, attacker.transport.secret_bytes()).await?;
-                ch.send_msg(&DeviceCard::sign(&third, Some(ch.channel_binding().to_string())))
-                    .await?;
+                let (mut ch, _) = SecureChannel::handshake(
+                    server,
+                    HandshakeRole::Responder,
+                    attacker.transport.secret_bytes(),
+                )
+                .await?;
+                ch.send_msg(&DeviceCard::sign(
+                    &third,
+                    Some(ch.channel_binding().to_string()),
+                ))
+                .await?;
                 // Block until the initiator drops the connection.
                 let _ = ch.recv_msg::<DeviceCard>().await;
                 Ok::<_, ChannelError>(())

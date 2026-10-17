@@ -26,8 +26,8 @@ use crate::op::{OpOutcome, OpReceipt, SyncOpWire};
 use std::sync::Arc;
 use xamverse_events::{EngineEvent, EventBus, EventKind};
 use xamverse_storage::repos::{
-    ConflictRow, ConflictStatus, ConflictsRepo, DevicesRepo, JobStatus, JobsRepo, KvRepo,
-    ObjectsRepo, OpRow, OpsRepo, TrustRepo,
+    ConflictRow, ConflictStatus, ConflictsRepo, DevicesRepo, JobsRepo, KvRepo, ObjectsRepo, OpRow,
+    OpsRepo,
 };
 use xamverse_storage::{now_rfc3339, Database, StorageResult};
 
@@ -35,7 +35,6 @@ const LAMPORT_KEY_PREFIX: &str = "lamport.";
 
 pub struct ApplyPipeline {
     db: Arc<Database>,
-    local_device_id: String,
     events: Arc<EventBus>,
 }
 
@@ -61,12 +60,8 @@ impl ApplyPipelineContext {
 }
 
 impl ApplyPipeline {
-    pub fn new(db: Arc<Database>, local_device_id: String, events: Arc<EventBus>) -> Self {
-        Self {
-            db,
-            local_device_id,
-            events,
-        }
+    pub fn new(db: Arc<Database>, events: Arc<EventBus>) -> Self {
+        Self { db, events }
     }
 
     /// Apply a batch; every op produces exactly one receipt.
@@ -92,7 +87,10 @@ impl ApplyPipeline {
         // 0. The op must claim the school it was delivered under — a sender
         // cannot smuggle a different tenant inside a batch.
         if op.school_id != school_id {
-            return Ok(reject(op, "school_mismatch: op claims a different tenant than the batch"));
+            return Ok(reject(
+                op,
+                "school_mismatch: op claims a different tenant than the batch",
+            ));
         }
 
         // 1. Tenant gate.
@@ -106,7 +104,8 @@ impl ApplyPipeline {
 
         // 2. Category gate.
         let Some(policy) = crate::category::policy_for(&op.category) else {
-            let conflict = self.record_conflict(op, "schema_unsupported", ConflictStrategy::Quarantine, None)?;
+            let conflict =
+                self.record_conflict(op, "schema_unsupported", ConflictStrategy::Quarantine, None)?;
             return Ok(conflicted(op, conflict));
         };
 
@@ -118,14 +117,14 @@ impl ApplyPipeline {
                 ConflictStrategy::Quarantine,
                 None,
             )?;
-            self.security_alert(&op, sender);
+            self.security_alert(op, sender);
             return Ok(conflicted(op, conflict));
         }
 
         // 4. Signature gate against the *author* device's known key.
         let author_pk = {
             let conn = self.db.lock();
-            match DevicesRepo::get(&conn, &op.author_device_id) {
+            match DevicesRepo::get(&conn, op.author_device_id.as_str()) {
                 Ok(device) => Some(device.signing_pk),
                 Err(_) => None,
             }
@@ -137,7 +136,7 @@ impl ApplyPipeline {
             ));
         };
         if !op.verify_signature(&author_pk) {
-            self.security_alert(&op, sender);
+            self.security_alert(op, sender);
             return Ok(reject(op, "invalid_signature"));
         }
 
@@ -153,7 +152,11 @@ impl ApplyPipeline {
             }
             let object = ObjectsRepo::get(conn, school_id, &op.category, &op.object_id)?;
             let (current_revision, current_hash, current_tombstone) = match &object {
-                Some(o) => (o.current_revision, Some(o.payload_sha256.clone()), o.tombstone),
+                Some(o) => (
+                    o.current_revision,
+                    Some(o.payload_sha256.clone()),
+                    o.tombstone,
+                ),
                 None => (0, None, false),
             };
 
@@ -172,7 +175,10 @@ impl ApplyPipeline {
                     )?;
                     return Ok(conflicted(op, conflict));
                 }
-                return Ok(reject(op, "stale_revision: object already advanced past this op"));
+                return Ok(reject(
+                    op,
+                    "stale_revision: object already advanced past this op",
+                ));
             }
 
             // Immutable categories only ever accept revision 1 (fresh create).
@@ -304,9 +310,8 @@ impl ApplyPipeline {
         strategy: ConflictStrategy,
         local_op_id: Option<String>,
     ) -> StorageResult<String> {
-        self.db.tx(|conn| {
-            self.record_conflict_tx(conn, op, kind, strategy, local_op_id)
-        })
+        self.db
+            .tx(|conn| self.record_conflict_tx(conn, op, kind, strategy, local_op_id))
     }
 
     fn record_conflict_tx(
@@ -351,14 +356,18 @@ impl ApplyPipeline {
                     attempt_id: op.object_id.clone(),
                     from_device: op.author_device_id.clone(),
                 },
-                _ => EventKind::TransferCompleted { job_id: op.op_id.clone() },
+                _ => EventKind::TransferCompleted {
+                    job_id: op.op_id.clone(),
+                },
             },
             OpOutcome::Conflict { conflict_id } => EventKind::ConflictDetected {
                 conflict_id: conflict_id.clone(),
                 category: op.category.clone(),
                 object_id: op.object_id.clone(),
             },
-            OpOutcome::Duplicate => EventKind::TransferCompleted { job_id: op.op_id.clone() },
+            OpOutcome::Duplicate => EventKind::TransferCompleted {
+                job_id: op.op_id.clone(),
+            },
             OpOutcome::Rejected { reason } => EventKind::TransferFailed {
                 job_id: op.op_id.clone(),
                 error: reason.clone(),
@@ -369,12 +378,13 @@ impl ApplyPipeline {
     }
 
     fn security_alert(&self, op: &SyncOpWire, sender: &SenderContext<'_>) {
-        self.events.publish(EngineEvent::new(EventKind::SecurityAlert {
-            alert: format!(
-                "quarantined {} op {} from sender {} (author {})",
-                op.category, op.op_id, sender.device_id, op.author_device_id
-            ),
-        }));
+        self.events
+            .publish(EngineEvent::new(EventKind::SecurityAlert {
+                alert: format!(
+                    "quarantined {} op {} from sender {} (author {})",
+                    op.category, op.op_id, sender.device_id, op.author_device_id
+                ),
+            }));
     }
 
     /// Scheduler hook: jobs stuck in `running` after a crash are requeued on
@@ -441,10 +451,14 @@ fn materialize_identity_record(conn: &rusqlite::Connection, row: &OpRow) -> Stor
     // replicated role_permissions records) — unknown roles are skipped.
     if let Some(roles) = value.get("roles").and_then(|v| v.as_array()) {
         for role in roles {
-            let Some(role_name) = role.as_str() else { continue };
-            if let Ok(Some(role_row)) =
-                xamverse_storage::repos::UsersRepo::find_role_by_name(conn, &row.school_id, role_name)
-            {
+            let Some(role_name) = role.as_str() else {
+                continue;
+            };
+            if let Ok(Some(role_row)) = xamverse_storage::repos::UsersRepo::find_role_by_name(
+                conn,
+                &row.school_id,
+                role_name,
+            ) {
                 xamverse_storage::repos::UsersRepo::grant_role(
                     conn,
                     &row.school_id,

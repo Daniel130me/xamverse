@@ -17,9 +17,7 @@ use crate::op::SyncOpWire;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use xamverse_events::{EngineEvent, EventBus, EventKind};
-use xamverse_storage::repos::{
-    AttemptEventRow, AttemptRow, AttemptsRepo, BlobRepo, PackagesRepo,
-};
+use xamverse_storage::repos::{AttemptEventRow, AttemptRow, AttemptsRepo, BlobRepo, PackagesRepo};
 use xamverse_storage::{checksum, now_rfc3339, Database, StorageError, StorageResult};
 
 /// How a finalized attempt replicates (to which targets).
@@ -33,7 +31,12 @@ pub struct AttemptStore {
 }
 
 impl AttemptStore {
-    pub fn new(db: Arc<Database>, device_id: String, events: Arc<EventBus>, local: Arc<crate::local::LocalOps>) -> Self {
+    pub fn new(
+        db: Arc<Database>,
+        device_id: String,
+        events: Arc<EventBus>,
+        local: Arc<crate::local::LocalOps>,
+    ) -> Self {
         Self {
             db,
             device_id,
@@ -80,7 +83,9 @@ impl AttemptStore {
         payload: impl Serialize,
     ) -> StorageResult<AttemptEventRow> {
         let payload_json = serde_json::to_string(&payload)?;
-        let event = self.db.tx(|conn| AttemptsRepo::append_event(conn, attempt_id, kind, &payload_json))?;
+        let event = self
+            .db
+            .tx(|conn| AttemptsRepo::append_event(conn, attempt_id, kind, &payload_json))?;
         Ok(event)
     }
 
@@ -113,7 +118,12 @@ impl AttemptStore {
 
         // Finalize transactionally, then replicate.
         self.db.tx(|conn| {
-            AttemptsRepo::finalize(conn, attempt_id, &attempt.latest_chain_hash, integrity_signature)?;
+            AttemptsRepo::finalize(
+                conn,
+                attempt_id,
+                &attempt.latest_chain_hash,
+                integrity_signature,
+            )?;
             xamverse_audit::record(
                 conn,
                 &xamverse_audit::AuditEvent::new("attempts.finalized")
@@ -192,7 +202,11 @@ pub struct PackageManifest {
 }
 
 impl PackageStore {
-    pub fn new(db: Arc<Database>, events: Arc<EventBus>, local: Arc<crate::local::LocalOps>) -> Self {
+    pub fn new(
+        db: Arc<Database>,
+        events: Arc<EventBus>,
+        local: Arc<crate::local::LocalOps>,
+    ) -> Self {
         Self { db, events, local }
     }
 
@@ -234,9 +248,10 @@ impl PackageStore {
             });
         }
 
-        // Store content blob + package row + immutable op atomically.
+        // Store content blob + package row atomically (the op is created
+        // separately below by LocalOps, which has its own transaction).
         let blob_sha = checksum(format!("pkg:{}", manifest.package_id));
-        let op = self.db.tx(|conn| {
+        self.db.tx(|conn| {
             BlobRepo::put(conn, &blob_sha, content_json.as_bytes())?;
             let package_id = manifest.package_id.clone();
             let inserted = PackagesRepo::put(
@@ -292,7 +307,11 @@ impl PackageStore {
     /// Student view: protected fields removed. Always available to any local
     /// session holding the package — this is the *only* view a student UI
     /// should call (spec §15: answer keys never ride to student clients).
-    pub fn student_view(&self, school_id: &str, package_id: &str) -> StorageResult<serde_json::Value> {
+    pub fn student_view(
+        &self,
+        school_id: &str,
+        package_id: &str,
+    ) -> StorageResult<serde_json::Value> {
         let (manifest, content) = self.load(school_id, package_id)?;
         let mut value: serde_json::Value = serde_json::from_str(&content)?;
         for pointer in &manifest.protected_fields {
@@ -360,7 +379,9 @@ fn remove_json_pointer(value: &mut serde_json::Value, pointer: &str) {
                 }
             }
             serde_json::Value::Array(array) => {
-                let Ok(i) = token.parse::<usize>() else { return };
+                let Ok(i) = token.parse::<usize>() else {
+                    return;
+                };
                 if is_last {
                     if i < array.len() {
                         array.remove(i);
@@ -382,28 +403,55 @@ mod tests {
     use super::*;
     use xamverse_identity::DeviceIdentity;
     use xamverse_storage::repos::SchoolsRepo;
-use xamverse_storage::{DatabaseKey, MemoryKeyStore};
+    use xamverse_storage::{DatabaseKey, MemoryKeyStore};
 
-    fn setup() -> (tempfile::TempDir, Arc<Database>, Arc<EventBus>, Arc<DeviceIdentity>) {
+    fn setup() -> (
+        tempfile::TempDir,
+        Arc<Database>,
+        Arc<EventBus>,
+        Arc<DeviceIdentity>,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let (db, _) = Database::open(dir.path().join("e.xamdb"), &DatabaseKey::generate()).unwrap();
         let db = Arc::new(db);
         db.tx(|conn| SchoolsRepo::enroll(conn, "s1", "S")).unwrap();
         let events = Arc::new(EventBus::new());
         let keystore = MemoryKeyStore::default();
-        let identity = Arc::new(DeviceIdentity::load_or_create(&keystore, "NodeA", "linux").unwrap());
+        let identity =
+            Arc::new(DeviceIdentity::load_or_create(&keystore, "NodeA", "linux").unwrap());
         (dir, db, events, identity)
     }
 
     #[test]
     fn attempt_lifecycle_is_durable_and_chain_verified() {
         let (_d, db, events, identity) = setup();
-        let local = Arc::new(crate::local::LocalOps::new(db.clone(), identity.clone(), events.clone()));
-        let store = AttemptStore::new(db.clone(), identity.device_id.clone(), events.clone(), local);
+        let local = Arc::new(crate::local::LocalOps::new(
+            db.clone(),
+            identity.clone(),
+            events.clone(),
+        ));
+        let store = AttemptStore::new(
+            db.clone(),
+            identity.device_id.clone(),
+            events.clone(),
+            local,
+        );
 
         let attempt = store.start("s1", "pkg-1", "student-42").unwrap();
-        let e1 = store.save_event(&attempt.attempt_id, "answer", serde_json::json!({"q": 1, "a": "b"})).unwrap();
-        let e2 = store.save_event(&attempt.attempt_id, "answer", serde_json::json!({"q": 2, "a": "c"})).unwrap();
+        let e1 = store
+            .save_event(
+                &attempt.attempt_id,
+                "answer",
+                serde_json::json!({"q": 1, "a": "b"}),
+            )
+            .unwrap();
+        let e2 = store
+            .save_event(
+                &attempt.attempt_id,
+                "answer",
+                serde_json::json!({"q": 2, "a": "c"}),
+            )
+            .unwrap();
         assert_ne!(e1.hash, e2.hash);
         assert_eq!(e2.prev_hash, e1.hash);
 
@@ -420,10 +468,21 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
     #[test]
     fn tampered_attempt_chain_cannot_finalize() {
         let (_d, db, events, identity) = setup();
-        let local = Arc::new(crate::local::LocalOps::new(db.clone(), identity.clone(), events.clone()));
-        let store = AttemptStore::new(db.clone(), identity.device_id.clone(), events.clone(), local);
+        let local = Arc::new(crate::local::LocalOps::new(
+            db.clone(),
+            identity.clone(),
+            events.clone(),
+        ));
+        let store = AttemptStore::new(
+            db.clone(),
+            identity.device_id.clone(),
+            events.clone(),
+            local,
+        );
         let attempt = store.start("s1", "pkg-1", "student-1").unwrap();
-        store.save_event(&attempt.attempt_id, "answer", serde_json::json!({"q": 1})).unwrap();
+        store
+            .save_event(&attempt.attempt_id, "answer", serde_json::json!({"q": 1}))
+            .unwrap();
 
         // Database-level tamper: a forged event row breaks the chain.
         let conn = db.lock();
@@ -441,7 +500,11 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
     #[test]
     fn package_student_view_strips_protected_fields() {
         let (_d, db, events, identity) = setup();
-        let local = Arc::new(crate::local::LocalOps::new(db.clone(), identity.clone(), events.clone()));
+        let local = Arc::new(crate::local::LocalOps::new(
+            db.clone(),
+            identity.clone(),
+            events.clone(),
+        ));
         let store = PackageStore::new(db.clone(), events.clone(), local);
 
         let manifest = PackageManifest {
@@ -463,7 +526,9 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         })
         .to_string();
 
-        store.import(&manifest, &content, Some("approval-sig"), &[]).unwrap();
+        store
+            .import(&manifest, &content, Some("approval-sig"), &[])
+            .unwrap();
 
         let student = store.student_view("s1", "pkg-1").unwrap();
         assert!(student.get("answer_key").is_none());
@@ -474,7 +539,10 @@ use xamverse_storage::{DatabaseKey, MemoryKeyStore};
         assert!(full.get("answer_key").is_some());
 
         // Content hash is stable and bindable by approvals.
-        assert_eq!(store.content_hash("s1", "pkg-1").unwrap(), checksum(&content));
+        assert_eq!(
+            store.content_hash("s1", "pkg-1").unwrap(),
+            checksum(&content)
+        );
 
         // Re-import of the same content is refused (immutable + deduplicated).
         assert!(store.import(&manifest, &content, None, &[]).is_err());
