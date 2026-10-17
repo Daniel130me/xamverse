@@ -1,10 +1,7 @@
-// Custom engine commands are registered by the Rust invoke handler. This
-// capability grants only Tauri's minimum core window surface; no filesystem,
-// shell, HTTP, process, or other plugin capability is exposed to JavaScript.
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "XamVerse desktop engine window capability",
+  "description": "Minimum core window capability. Engine commands use the Rust invoke handler; filesystem, shell, HTTP, process, and plugin capabilities are not exposed.",
   "windows": ["main"],
   "permissions": ["core:default"]
 }
