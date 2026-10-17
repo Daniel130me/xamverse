@@ -110,14 +110,20 @@ xamverse-peer --data-dir <dir> licence-request --out activation-request.json --s
 license-issuer-dev generate-key --out issuer-keypair.json
 license-issuer-dev issue --request activation-request.json --key issuer-keypair.json \
     --plan standard --days 365 --grace 30 --device-limit 5 --out licence.json
-xamverse-peer --data-dir <dir> licence-import --file licence.json
+xamverse-peer --data-dir <dir> licence-import --file licence.json \
+    --issuer-pk "$(python3 -c 'import json;print(json.load(open("issuer-keypair.json"))["public_key_b64"])')"
 ```
 
-Known friction in the current build: `licence-request` writes the bare
-request object while `license-issuer-dev issue` expects a
-`{"request": …}` wrapper, and the peer CLI has no flag to configure
-`trusted_issuer_pks` — see `KNOWN_LIMITATIONS.md` (verified during this
-documentation pass).
+The request file is the shared `ActivationRequestFile` envelope
+(`{"request": {…}}`) from the `xamverse-licensing` crate — one type written
+by `licence-request` and read by the issuer, so the on-disk shape cannot
+drift between tools (it did once; fixed and verified end-to-end with the
+debug binaries through `status: Active`). `licence-import` requires
+`--issuer-pk` (repeatable for rotation); keys are validated up front
+(base64, 32 bytes) so a typo fails with an actionable message. The engine
+still enforces trust at verification time — the flag only configures
+`EngineConfig.trusted_issuer_pks` for that invocation, mirroring how the
+desktop shell will inject the production issuer key.
 
 ## 5. State machine
 

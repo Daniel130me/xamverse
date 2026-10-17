@@ -181,3 +181,37 @@ Phase 3 owns (application layer, per `PHASE3_INTEGRATION_GUIDE.md`):
 8. Static frontend bundle pipeline for the browser bridge.
 9. Keep the 19-case vitest suite green through the `MockClient` → real
    adapter swap (the acceptance gate).
+
+---
+
+## 7. Resolution update (post-measurement pass)
+
+The report above is the measured state at the documentation pass; the
+following items from §5/§6 were subsequently fixed and re-verified
+(`cargo test --workspace` 80/80, clippy `-D warnings` clean, fmt clean, and
+the CLI flows executed for real):
+
+1. **Working-tree fixes committed + branch reconciled** (§5.4, §6.1) — the
+   engine tip lives on `feat/desktopz`; local `main` was cleaned of an
+   accidental `target/` commit before it could be pushed.
+2. **Licence CLI flow fixed end-to-end** (§5.6): shared
+   `ActivationRequestFile` envelope in `xamverse-licensing`;
+   `licence-import --issuer-pk` with early key validation. Verified:
+   request → issue → import prints `status: Active`.
+3. **CLI error ergonomics** (§5.7): no more `unwrap()` panics — single
+   `error:` line, non-zero exit, peer error envelopes decoded
+   (`SyncError::PeerError`), logs on stderr, `peer-ping` failures exit
+   non-zero. Regression-pinned by integration Test B and
+   `scripts/engine-e2e.sh` step 4.
+4. **CI implemented** (§5.2, §6.3): `.github/workflows/ci.yml`
+   (rust-test / rust-clippy -D warnings / rust-fmt / ts-check incl. the
+   SDK / engine-e2e) + `desktop.yml` dispatch-only shell builds.
+5. **`engine-sdk` + Tauri shell scaffolded** (§5.3): the SDK's browser
+   adapter works against today's bridge routes (13 tests), the desktop
+   adapter targets the `engine_<ns>_<op>` command contract, and `src-tauri`
+   builds a real windowed scaffold with honest shell-state commands. Phase
+   3 owns the engine embedding, full command set, and installers.
+6. **Workspace hygiene**: clippy/fmt gates added and every pre-existing
+   warning fixed properly (including real findings: unchecked day-count
+   arithmetic on untrusted licences, an unenforced login body cap,
+   truncated-archive parsing, thread-spawn failure handling).

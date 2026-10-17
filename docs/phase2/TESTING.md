@@ -80,20 +80,21 @@ practice, admin actions). During the Phase 3 engine swap this suite is the
 acceptance gate (`CODEX_PHASE2_HANDOFF.md` §5): keep it green against the
 `MockClient`, then re-point adapters.
 
-## 3. CI jobs (target state)
+## 3. CI jobs (implemented)
 
-The `.github/workflows` directory **does not exist yet** in this checkout —
-planned jobs, to be added with the handoff (names per ADR-0001's
-per-crate-gating requirement):
+`.github/workflows/ci.yml` runs this matrix on every push/PR (names per
+ADR-0001's per-crate-gating requirement; measured gates match the commands
+below). The desktop bundling jobs live in `.github/workflows/desktop.yml`
+and are dispatch-only + non-blocking until the shell ships.
 
 | Job | Runs | Gate |
 |---|---|---|
-| `rust-test` | `cargo test --workspace` on linux (SQLCipher vendored build) | 76+ tests green |
-| `rust-clippy` | `cargo clippy --workspace -- -D warnings` | no new lints |
+| `rust-test` | `cargo test --workspace` on linux (SQLCipher vendored build) | 80 tests green (A–D incl. Test B) |
+| `rust-clippy` | `cargo clippy --workspace --all-targets -- -D warnings` | zero findings (library code strict; tests exempt per crate) |
 | `rust-fmt` | `cargo fmt --check` | formatted |
-| `ts-check` | `bun run typecheck && bun run lint && bun run test` | 19/19 |
+| `ts-check` | `bun run typecheck && bun run lint && bun run test` + the same for `packages/engine-sdk` | 19/19 prototype + 13/13 SDK |
 | `desktop-windows` / `desktop-macos` | build `src-tauri` + `tauri bundler` → `.msi` / `.dmg` artifacts | bundles build (excluded from the normal workspace by design) |
-| `engine-e2e` | the §4 CLI demo scripted | ping/pair/approve/pull succeed |
+| `engine-e2e` | `scripts/engine-e2e.sh` (the §4 demo, scripted) | ping → enroll → pair → approve ×2 → pull complete → mutual trust, plus the clean-refusal negative check |
 
 The Tauri shell is excluded from the workspace because it needs GUI system
 libraries absent on headless machines (`Cargo.toml` `exclude`, ADR-0001) —
@@ -153,7 +154,10 @@ behaviour for one-shot commands against a serving node.
 1. **Both nodes must enroll the school before pairing.** Trust rows are
    tenant-scoped (`device_trust` FK on `schools`); pairing into an
    un-enrolled school fails on the responder with a `FOREIGN KEY constraint
-   failed`, and the requester sees the mangled symptom below.
+   failed`, and the requester now sees that as a clean structured error:
+   `error: pairing request refused: peer replied with error request_failed:
+   FOREIGN KEY constraint failed` (exited non-zero — verified by
+   `scripts/engine-e2e.sh` step 4).
 2. **One-shot commands cannot run while the same data dir is serving**
    (`engine.lock` → `EngineError::AlreadyRunning`). Enroll/approve require
    stopping the node first (or a second operator on a different machine).
@@ -161,14 +165,14 @@ behaviour for one-shot commands against a serving node.
    `serve`; one-shot commands merely queue the job. Retries follow the
    standard backoff, so a pull queued before the peer was approved succeeds
    on a later attempt without operator action.
-4. **Pair-request/peer errors surface as CLI panics** (`unwrap()` in the
-   CLI) rather than structured messages — see `KNOWN_LIMITATIONS.md`. Two
-   verified shapes: the responder panics with the underlying error (e.g.
-   `FOREIGN KEY constraint failed` on a peer-approve for an unknown device
-   id), and the *requester* deserializes the peer's error envelope as a
-   success payload, panicking with
-   `Json(Error("missing field \`responder_device_id\`"))` — the CLI does not
-   check `reply.kind == "error"` before parsing.
+4. ~~**Pair-request/peer errors surface as CLI panics**~~ **Resolved** (see
+   `KNOWN_LIMITATIONS.md` §7): the CLI prints one `error:` line and exits
+   non-zero; peer error envelopes decode to their message. Two practical
+   notes for scripts that automate the CLI: logs go to **stderr** (stdout is
+   machine-readable output only), and the scripted demo in
+   `scripts/engine-e2e.sh` is the maintained version of the manual sequence
+   above — use it as the canonical reference for ordering (enroll before
+   serving, capture ids while nodes are stopped).
 
 ## 5. Measured-test-evidence policy
 

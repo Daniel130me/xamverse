@@ -141,3 +141,33 @@ Work Log:
 
 Stage Summary:
 - All claimed test evidence reconfirmed green at 24c6892d. Local main clean and matching origin. feat/desktopz remains the integration branch; PR compare link feat/phase1-handoff...feat/desktopz.
+
+---
+Task ID: CLI-CI-SDK
+Agent: Super Z (main agent)
+Task: Fix licence-CLI bugs + CLI error handling, add the CI workflow matrix, scaffold engine-sdk + Tauri shell (feat/desktopz)
+
+Work Log:
+- Environment recovery: sandbox reset $HOME (rust gone) and force-switched HEAD to main between calls. Reinstalled Rust into persistent project dirs; recovered feat/desktopz from origin; worked in a linked git worktree (wt-desktopz) to dodge the auto-switcher.
+- fix(sync): request_pairing now routes through request_typed so peer error envelopes surface as SyncError::PeerError (was: requester parsed an error payload as PairPending and panicked); kinds::ERROR const replaces the magic string; new integration Test B pins pairing-into-unenrolled-school over real TCP (80/80 total).
+- feat(licensing): ActivationRequestFile envelope moved into the xamverse-licensing crate — one interchange type written by licence-request, read by license-issuer-dev (file shape can never drift again).
+- fix(cli): both tools rewritten on anyhow — single `error:` line + non-zero exit, zero unwrap/expect panics on operator input; licence-import gained repeatable --issuer-pk with early validation (base64, 32 bytes); logs now go to stderr (stdout is machine-readable). Verified end-to-end: request → issue → import prints `status: Active`; missing/wrong pk fail with clean actionable errors.
+- chore(engine): enforced clippy --workspace --all-targets -D warnings + cargo fmt as CI gates; fixed every finding properly, including real ones: checked (non-panicking) day-count math on untrusted licence certs, 4 KiB request-body cap actually wired on the bridge login route, truncated backup archives parse to BackupError::Corrupted instead of panicking, mdns thread-spawn failure is a typed error, dead code removed (browse_guard, advance_lamport, ApplyPipeline.local_device_id), FromStr trait implementations replace confusable inherent methods, audit chain_hash takes a grouped ChainInput struct. Tests keep unwrap/expect via per-crate cfg(test) exemptions; library code stays strict.
+- ci: .github/workflows/ci.yml (rust-test, rust-clippy, rust-fmt, ts-check incl. SDK, engine-e2e) + desktop.yml (dispatch-only, continue-on-error scaffold preview). scripts/engine-e2e.sh: scripted two-peer demo (enroll → serve → ping → pair → approve ×2 → pull complete → mutual trust + clean-refusal negative check) — run locally, ALL STEPS PASSED.
+- feat(sdk): packages/engine-sdk — typed EngineClient contract (ENGINE_API.md §3-10 types verbatim), three transports: browser adapter WORKING against today's bridge routes (cookie sessions, SSE, error normalization for both wire shapes, unsupported_on_browser_adapter sandbox), desktop adapter invoking engine_<ns>_<op> with injected Tauri invoke/listen, boot-surface mock. Zero runtime deps. 13 vitest tests + tsc clean.
+- feat(shell): src-tauri Tauri 2 scaffold — window bootstrap, honest shell_status/shell_ping commands (no fake engine responses), restrictive CSP, minimal capabilities, dev points at Next dev server, scaffold-dist placeholder for the Phase 3 export. Excluded from the cargo workspace (GUI libs); desktop.yml builds it on real runners. Not compiled in this headless container (documented, not hidden).
+- docs: KNOWN_LIMITATIONS items 1/7/9/10/18/21 marked RESOLVED with evidence; TESTING.md §3 now "implemented" with real job matrix, §4 caveats updated; LICENSING.md CLI flow rewritten (envelope + --issuer-pk); PHASE2_COMPLETION_REPORT gained §7 resolution update.
+
+Quality self-check (per the implementation spec):
+- Readable/well-structured/commented: every non-obvious change carries a why-comment (e.g. request_typed rationale in request_pairing, ChainInput grouping, days_delta checked-vs-saturating split); CLI main.rs documents its error contract up front.
+- Easy to pick up/extend: shared envelope type means the licence file format has ONE definition; SDK adapters mirror ENGINE_API.md 1:1 so the shell implementation is mechanical; engine-e2e.sh is the canonical scripted demo.
+- Reduce queries / performance: no new query paths; the local.rs payload-hash restructure computes the hash once before the transaction instead of inside it; sync store.rs dropped a pointless unit binding.
+- Security first: trusted-issuer keys validated early; login body cap enforced (was declared but never applied — real DoS gap); untrusted licence day counts no longer panic (DoS via malicious cert); backup parser rejects truncated archives with a typed error instead of indexing; CSP + minimal capabilities on the shell; browser SDK adapter deliberately exposes no peer/keystore surface.
+- Non-standard implementations flagged: NOTE(scaffold) on src-tauri (not compiled headless, icons empty), NOTE(heuristic) on SDK status→code mapping, console.warn on subscribeSince cold-start gap, scoped #[allow]s each carry a written justification (serde infallibility, static params).
+- Do-not-patch check: integration Test B + engine-e2e step 4 pin the actual regression (error-envelope panic) rather than masking it; the licence envelope fix removes the drift possibility structurally; clippy findings were fixed at the root (typed errors, total matches), not blanket-suppressed.
+- Avoided over-engineering/magic values/hard-coded assumptions: anyhow only in the two CLI tools (engine crates keep typed thiserror enums); envelope only where the contract was broken (response file stays the bare cert, documented); ports/paths in e2e script are env-overridable with documented defaults; no new abstractions beyond the contract.
+
+Verification: cargo test --workspace 80/80; clippy -D warnings clean; fmt --check clean; engine-e2e ALL STEPS PASSED; licence flow verified with real binaries (Active + clean negative paths); SDK 13/13 + tsc clean; root prototype 19/19 + tsc + eslint clean.
+
+Stage Summary:
+- feat/desktopz carries: licence CLI fixed end-to-end, CLI error contract, CI matrix + scripted e2e, engine-sdk + src-tauri scaffolds, workspace lint gates. PR compare: feat/phase1-handoff...feat/desktopz.

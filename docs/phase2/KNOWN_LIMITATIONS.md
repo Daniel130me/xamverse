@@ -6,6 +6,10 @@ behaviour, the impact, and the intended resolution where one exists.
 Nothing here is speculative — every item was verified against the code (and,
 where marked, executed) during this documentation pass.
 
+> Resolution log: items marked **RESOLVED** were fixed and re-verified after
+> the documentation pass (see the resolution notes on each item); they stay
+> listed so the history of known risks remains auditable.
+
 ---
 
 ## Build, packaging and distribution
@@ -13,9 +17,13 @@ where marked, executed) during this documentation pass.
 1. **No Windows/macOS binaries were built in this environment.** The engine
    compiles and tests on Linux; the Tauri shell (`src-tauri/`) is an
    independent package excluded from the workspace (needs GUI system
-   libraries) and its `.msi`/`.dmg` bundles are CI's job. The workflows
-   directory (`.github/workflows/`) **does not exist yet** — the planned CI
-   jobs are listed in `TESTING.md` §3, none are running.
+   libraries) and its `.msi`/`.dmg` bundles are CI's job. ~~The workflows
+   directory does not exist yet~~ **RESOLVED (partially):** `ci.yml` now runs
+   the `TESTING.md` §3 Linux matrix (rust-test / rust-clippy -D warnings /
+   rust-fmt / ts-check incl. the engine SDK / engine-e2e two-peer demo) on
+   every push; `desktop.yml` builds the shell on Windows/macOS runners
+   (dispatch-only, non-blocking until the shell ships). Actual
+   `.msi`/`.dmg` bundling remains open (item 2).
 2. **No code signing anywhere.** Windows Authenticode and macOS
    Developer ID + notarization steps are documented as the required
    pre-release checklist in `UPDATES_AND_INSTALLERS.md` §7 — none executed.
@@ -42,16 +50,19 @@ where marked, executed) during this documentation pass.
    `SameSite=Strict` cookies plus the Origin allowlist check on
    state-changing requests (`xamverse-web/src/lib.rs`). A token-based
    defence is future work (`SECURITY_MODEL.md` §7.4).
-7. **Pair-request/peer failures surface as CLI panics.** The handler
+7. **Pair-request/peer failures surface as CLI panics.** ~~The handler
    correctly returns structured errors, but `peer-cli` `unwrap()`s several
-   call sites, so operators see a Rust panic instead of the message. Three
-   verified shapes from the two-peer demo (TESTING.md §4): pairing into an
-   un-enrolled school fails on the responder with
-   `FOREIGN KEY constraint failed`; `peer-approve` for a device id missing
-   from `devices` panics with the same constraint error; and a *requester*
-   that receives an error envelope panics with
-   `Json(Error("missing field `responder_device_id`"))` because the CLI
-   parses the reply payload without checking `reply.kind == "error"`.
+   call sites~~ **RESOLVED.** Both CLI tools now report a single
+   `error: …` line and exit non-zero on every failure (anyhow context
+   chains, no panics on operator input); `request_pairing` is routed
+   through the typed reply helper so peer error envelopes surface as
+   `SyncError::PeerError` instead of a JSON parse panic; `peer-ping`
+   failure exits non-zero. Pinned by integration **Test B** and by the
+   negative check in `scripts/engine-e2e.sh` step 4 (verified:
+   `pairing request refused: peer replied with error request_failed:
+   FOREIGN KEY constraint failed`). Related: the CLI now writes logs to
+   stderr, keeping stdout machine-readable (Unix convention, previously
+   mixed).
 8. **Engine-lock vs one-shot commands.** Any `xamverse-peer` command on a
    data dir whose `serve` is running fails with `AlreadyRunning` (the
    single-instance flock working as designed). Operationally this means
@@ -61,17 +72,17 @@ where marked, executed) during this documentation pass.
 ## Licensing
 
 9. **`licence-request` ↔ `license-issuer-dev issue` file-shape mismatch.**
-   The CLI writes the bare `ActivationRequest` JSON;
-   `license-issuer-dev issue` expects `{"request": {…}}` (its `RequestFile`
-   wrapper). The documented flow fails without manually wrapping the file —
-   verified: `request file shape: Error("missing field `request`")`.
-   Workaround: wrap manually; proper fix is a one-line change on either
-   side.
-10. **`licence-import` cannot succeed via the CLI.** The peer CLI builds
-    `EngineConfig::default()`, whose `trusted_issuer_pks` is empty, and has
-    no flag to add one — every import ends in
-    `signature not from a trusted issuer` (verified). The library flow is
-    fine (`LICENSING.md` tests pass); the CLI needs an `--issuer-pk` flag.
+   **RESOLVED.** The interchange envelope `ActivationRequestFile`
+   (`{"request": {…}}`) now lives in the `xamverse-licensing` crate and is
+   written by `licence-request` and read by the issuer tool — one shared
+   type, so the file shape cannot drift again. Verified end-to-end with the
+   debug binaries: request → issue → import → `status: Active`.
+10. **`licence-import` cannot succeed via the CLI.** **RESOLVED.**
+    `licence-import` takes a repeatable `--issuer-pk <base64-ed25519-pk>`
+    flag (validated up front: base64, 32 bytes — a typo now fails with an
+    actionable message instead of the generic trust error). Verified:
+    import with the issuer key prints `licence imported; status: Active`;
+    missing/malformed keys fail with clean errors and exit 1.
 11. **Delayed revocation / clock rollback.** Offline revocation is
     eventually consistent (ADR-0006), and licence status derives from the
     local clock — an operator with OS access can rewind it
@@ -110,10 +121,16 @@ where marked, executed) during this documentation pass.
 
 ## Application layer
 
-18. **The Tauri shell and `engine-sdk` are stubs.** `packages/engine-sdk/src`
-    and `src-tauri/src` exist but are **empty** (being written separately) —
-    `ENGINE_API.md` is the contract they must implement; the desktop IPC
-    adapter cannot be exercised until the shell lands.
+18. **The Tauri shell and `engine-sdk` are stubs.** ~~Both are empty~~
+    **RESOLVED (scaffolded).** `packages/engine-sdk` now provides the typed
+    `EngineClient` with three transports: the browser adapter works against
+    today's bridge routes (13 SDK tests pin the contract), the desktop
+    adapter invokes `engine_<ns>_<op>` commands (they exist once the shell
+    implements them), and a boot-surface mock backs vitest/storybook.
+    `src-tauri` builds a real windowed scaffold (`shell_status` /
+    `shell_ping`, restrictive CSP, minimal capabilities) with the Phase 3
+    wiring points documented. The engine embedding, the full command set,
+    and the desktop IPC round-trip remain open (Phase 3).
 19. **No frontend bundle pipeline for the bridge.** The web bridge can serve
     `frontend_dir` but nothing builds the Next.js app into a static bundle
     wired to it yet (Phase 3 work).
@@ -123,9 +140,18 @@ where marked, executed) during this documentation pass.
 
 ## Code-quality flags found in-tree (non-blocking)
 
-21. **14 compiler warnings in `xamverse-sync`** (mostly unnecessary clones /
-    unused imports — `cargo fix` suggestions are available). Cosmetic; the
-    suite passes.
+21. **Compiler warnings across the workspace.** ~~14 in `xamverse-sync`~~
+    **RESOLVED.** The workspace now passes `cargo clippy --workspace
+    --all-targets -- -D warnings` and `cargo fmt --all -- --check` (the new
+    CI gates). Mechanical fixes were applied via `cargo fix`; genuine
+    findings were fixed properly — unchecked `try_days` on untrusted
+    licence day counts (now checked/saturating), an unenforced login body
+    cap in the web bridge (now a 4 KiB request-body limit), a truncated
+    archive parse path (now `BackupError::Corrupted`), thread-spawn failure
+    now a typed error, dead fields/methods removed. Test code keeps
+    unwrap/expect via a per-crate `cfg(test)` exemption; library code stays
+    strict. Integration-test helpers use a scoped `cfg_attr(not(test))`
+    allow (the crate's real output is its test target).
 22. **`store.rs` carries a stale comment** about receiver-side blob keys
     ("No — the op is inline-manifest + blob ref…") left from debugging; the
     code is correct (blob keyed by `blob_sha256`), the comment is noise.
