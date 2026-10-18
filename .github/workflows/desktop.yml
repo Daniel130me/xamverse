@@ -45,6 +45,48 @@ jobs:
       - name: Build installer
         working-directory: src-tauri
         run: bun x @tauri-apps/cli build --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
+      - name: Smoke-test packaged application startup
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        working-directory: src-tauri
+        run: |
+          $executable = Resolve-Path "target\${{ matrix.target }}\release\xamverse-shell.exe"
+          $stdout = Join-Path $env:RUNNER_TEMP "xamverse-smoke.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "xamverse-smoke.stderr.log"
+          $process = Start-Process -FilePath $executable -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              $process.Refresh()
+              if ($process.HasExited) {
+                throw "XamVerse exited during startup with code $($process.ExitCode)"
+              }
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:47811/healthz" -TimeoutSec 2
+                if ($health.ok -eq $true) {
+                  $ready = $true
+                  break
+                }
+              } catch {
+                # Startup is asynchronous; retry until the bounded deadline.
+              }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $ready) {
+              throw "XamVerse did not expose its health endpoint within 30 seconds"
+            }
+          } catch {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw
+          } finally {
+            $process.Refresh()
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+              Wait-Process -Id $process.Id -ErrorAction SilentlyContinue
+            }
+          }
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:

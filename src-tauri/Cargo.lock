@@ -5521,7 +5521,7 @@ dependencies = [
 
 [[package]]
 name = "xamverse-shell"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "keyring",
  "serde",
