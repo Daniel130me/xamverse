@@ -93,12 +93,17 @@ impl WebServer {
         config: WebConfig,
         shutdown: tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), WebError> {
-        let bound = Self::bind(engine, config)?;
+        let bound = Self::bind(engine, config).await?;
         bound.run(shutdown).await
     }
 
     /// Bind the listener and build the router. Returns the bound address.
-    pub fn bind(engine: Arc<Engine>, config: WebConfig) -> Result<BoundWebServer, WebError> {
+    ///
+    /// Binding is explicitly asynchronous because Tokio listeners must be
+    /// created while a runtime is entered. Encoding that requirement in the
+    /// API prevents desktop hosts from accidentally binding during a
+    /// synchronous setup callback and crashing at launch.
+    pub async fn bind(engine: Arc<Engine>, config: WebConfig) -> Result<BoundWebServer, WebError> {
         let state = WebState {
             engine,
             allowed_origins: Arc::new(config.allowed_origins.clone()),
@@ -132,9 +137,7 @@ impl WebServer {
         // Security headers on every response.
         let app = router.layer(axum::middleware::from_fn(security_headers));
 
-        let listener = std::net::TcpListener::bind(config.bind)?;
-        listener.set_nonblocking(true)?;
-        let listener = tokio::net::TcpListener::from_std(listener)?;
+        let listener = tokio::net::TcpListener::bind(config.bind).await?;
         tracing::info!(addr = %listener.local_addr().map(|a| a.to_string()).unwrap_or_default(), "browser bridge listening");
         Ok(BoundWebServer { listener, app })
     }
@@ -548,7 +551,7 @@ mod tests {
             allowed_origins,
             frontend_dir: None,
         };
-        let bound = WebServer::bind(server_engine, config).unwrap();
+        let bound = WebServer::bind(server_engine, config).await.unwrap();
         let addr = bound.addr().unwrap();
         tokio::spawn(async move { bound.run(shutdown_rx).await.unwrap() });
         (addr, engine, shutdown_tx, dir)

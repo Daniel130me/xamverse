@@ -37,14 +37,14 @@ pub fn run() {
 
             let (browser_shutdown, shutdown_rx) = tokio::sync::watch::channel(false);
             let frontend_dir = browser_frontend_dir(app);
-            let web = xamverse_web::WebServer::bind(
+            let web = tauri::async_runtime::block_on(xamverse_web::WebServer::bind(
                 engine.clone(),
                 xamverse_web::WebConfig {
                     bind: SocketAddr::from(([0, 0, 0, 0], engine.config.browser_port)),
                     allowed_origins: Vec::new(),
                     frontend_dir,
                 },
-            )?;
+            ))?;
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = web.run(shutdown_rx).await {
                     tracing::error!(%error, "browser bridge stopped unexpectedly");
