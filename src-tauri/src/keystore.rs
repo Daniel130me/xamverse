@@ -19,7 +19,7 @@ impl PlatformKeyStore {
             data_dir.canonicalize()
         })?;
         Ok(Self {
-            namespace: xamverse_storage::checksum(absolute.to_string_lossy()),
+            namespace: xamverse_storage::checksum(absolute.to_string_lossy().as_bytes()),
         })
     }
 
