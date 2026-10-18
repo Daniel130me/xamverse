@@ -26,7 +26,6 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "dmg"],
-    "resources": ["frontend-dist/**/*"],
-    "icon": []
+    "resources": ["frontend-dist/**/*"]
   }
 }
