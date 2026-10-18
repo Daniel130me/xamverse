@@ -17,7 +17,7 @@
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use std::io::Write as _;
+use std::io::{IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
 use xamverse_core::{Engine, EngineConfig};
 use xamverse_licensing::ActivationRequestFile;
@@ -134,6 +134,9 @@ fn main() -> std::process::ExitCode {
     // tab-separated rows), so scripts can parse one without the other.
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
+        // Redirected CLI output is parsed by diagnostics and CI scripts.
+        // ANSI styling is useful interactively but corrupts stable log text.
+        .with_ansi(std::io::stderr().is_terminal())
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| cli.log.clone().into()),
